@@ -53,11 +53,11 @@ e só então pode ganhar peso no score.
   como `desconhecido` COM razão — nunca `não`. Cada lance vira um registro
   versionado (schema/features/regras) e deduplicado por `episode_id`. Não
   altera score nem HTML (`peso` inalterado). Coberto por testes (`tests/`).
-- 🔨 D0.2. Descartes agora são persistidos com o motivo: `SMOKE-COMUM`,
-  `TRACK-INFO`, `TRACK-VIU` (já no relatório) e o novo `TRACK-PARADO` (mira
-  segurando ângulo — antes descartado em silêncio, agora vai ao dataset).
-  Falta um painel de revisão que permita reavaliar cada decisão sem reler o
-  código.
+- ✅ D0.2. Candidatos e descartes registrados com motivo, no dataset E no
+  relatório: v6.15 adiciona ao card o painel colapsável "Descartes e
+  controles" com cada lance excluído (TRACK-PARADO, REFLEXO com info,
+  trocas spotted, etc.) e o `demo_gototick` — a decisão é revisável sem
+  reler o código.
 - 🔨 D0.3. Ferramenta `rotular.py` criada (revisões **append-only** — nunca
   sobrescreve; `listar` + gravação por episódio) e **primeiras 4 revisões
   reais gravadas** (caso de calibração, revisor único: autor): 3
@@ -278,13 +278,22 @@ comparação antes/depois e justificativa em `APRENDIZADOS.md`.
 
 ## Backlog (sem ordem)
 
-- ⏳ Assinatura da mira: variância do tempo de reação (triggerbot), suavidade
-  do traçado (aimbot humanizado), detector de spinbot
+- ✅ Assinatura da mira (v6.15, observacional): dp da reação, suavidade do
+  yaw (z vs lobby) e spins no card de cada jogador — sem peso até calibrar
+  em mais lobbies
 - ⏳ Análise em lote de todas as demos + ranking consolidado de reincidentes
 - ⏳ Checagem semanal automática de bans (agendador do Windows) — pedir quando quiser
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-15 · v6.15 (D0.2 ✅ + assinatura da mira): painel "Descartes e
+  controles" no card (decisões revisáveis sem reler código) e assinatura da
+  mira nativa — dp da reação, suavidade (z vs lobby) e spins, tudo
+  observacional. Primeiro dado da assinatura: caso de calibração com
+  suavidade z=-2,3 (outlier extremo; hipóteses documentadas: suavizador OU
+  quase-zero correção por pré-mira informada), dp de reação humana e zero
+  spins no lobby.
 
 - 2026-07-15 · v6.14 (D2.3): troca de mira entre alvos ocultos — primeiro
   sinal FORA das janelas de kill (varredura contínua da partida, ~125 ms).

@@ -31,6 +31,7 @@ import bisect
 import shutil
 import pathlib
 import datetime
+import statistics
 import webbrowser
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -411,6 +412,8 @@ def novo_jogador(nome):
         "premira": 0, "vitimas_premira": [],
         "reflexos": 0, "vitimas_reflexo": [],
         "trocas": 0, "vitimas_troca": [],
+        # assinatura da mira (baseline humano de referência — APRENDIZADOS)
+        "lista_reacao_ms": [], "lista_jerk": [], "spins": 0,
         "tiros": 0, "acertos": 0, "acertos_cabeca": 0,
         # L7: escalada de score exige vítimas DISTINTAS (vítima previsível
         # dispara o mesmo sinal em vários atacantes)
@@ -809,6 +812,23 @@ def analisar_demo(caminho):
         ticks_no_alvo = max(0, i - 1)
         if 0 < ticks_no_alvo <= JANELA:
             reacao = ticks_no_alvo
+            atacante["lista_reacao_ms"].append(reacao * 15.625)
+
+        # assinatura da mira: suavidade (jerk do yaw) e spins nesta janela
+        yaws = [lk.get((t, a_sid)) for t in range(T - 64, T + 1)]
+        vels = []
+        for i in range(1, len(yaws)):
+            if yaws[i] is not None and yaws[i - 1] is not None:
+                vels.append(norm180(yaws[i][3] - yaws[i - 1][3]))
+            else:
+                vels.append(None)
+        if any(v is not None and abs(v) > 120.0 for v in vels):
+            atacante["spins"] += 1  # >120°/tick: giro impossível para humano
+        jerks = [abs((vels[i] - vels[i - 1]) - (vels[i - 1] - vels[i - 2]))
+                 for i in range(2, len(vels))
+                 if None not in (vels[i], vels[i - 1], vels[i - 2])]
+        if jerks:
+            atacante["lista_jerk"].append(sum(jerks) / len(jerks))
 
         desvio_kill = desvios[T][0] if T in desvios else None
         if (snap >= FLICK_MIN_GRAUS and reacao is not None
@@ -1315,6 +1335,27 @@ def analisar_demo(caminho):
         if str(get(h, "hitgroup", "")) == "head":
             jogadores[sid]["acertos_cabeca"] += 1
 
+    # --- assinatura da mira por jogador (observacional, sem peso) ---
+    # baseline humano de referência (APRENDIZADOS): dp de reação 400–880 ms,
+    # zero spins. Triggerbot teria dp de dezenas de ms; aimbot humanizado é
+    # mais SUAVE que humano (jerk baixo — z negativo extremo no lobby).
+    medianas_jerk = {sid: statistics.median(p["lista_jerk"])
+                     for sid, p in jogadores.items()
+                     if len(p["lista_jerk"]) >= 5}
+    mu_j = sd_j = None
+    if len(medianas_jerk) >= 4:
+        vals = list(medianas_jerk.values())
+        mu_j = statistics.mean(vals)
+        sd_j = statistics.pstdev(vals)
+    for sid, p in jogadores.items():
+        ass = {"spins": p["spins"]}
+        if len(p["lista_reacao_ms"]) >= 8:
+            ass["dp_reacao_ms"] = statistics.pstdev(p["lista_reacao_ms"])
+            ass["n_reacoes"] = len(p["lista_reacao_ms"])
+        if sid in medianas_jerk and sd_j:
+            ass["suavidade_z"] = (medianas_jerk[sid] - mu_j) / sd_j
+        p["assinatura"] = ass
+
     # --- Fase D0: grava cada lance como episódio forense reproduzível ---
     # (não altera score nem HTML; só materializa o contexto para calibração/ML)
     meta_ep = {
@@ -1628,15 +1669,48 @@ def gerar_html(jogadores, meta, hist):
             f"<tr><td>{html.escape(k)}</td><td class='num'>+{v}</td></tr>"
             for k, v in sorted(comp.items(), key=lambda kv: -kv[1]))
 
+        def linha_momento(m):
+            return (
+                f"<tr><td>{ICONES.get(m['tipo'], '•')} {m['tipo']}</td>"
+                f"<td class='num'>{m['round']}</td>"
+                f"<td>{html.escape(str(m['vitima']))}</td>"
+                f"<td>{html.escape(m['arma'])}</td>"
+                f"<td class='desc-momento'>{html.escape(m['desc'])}</td>"
+                f"<td><code>demo_gototick {max(0, m['tick'] - 320)}</code>"
+                "</td></tr>")
+
         momentos = sorted(p["momentos"], key=lambda m: -m["peso"])[:30]
-        linhas_mom = "".join(
-            f"<tr><td>{ICONES.get(m['tipo'], '•')} {m['tipo']}</td>"
-            f"<td class='num'>{m['round']}</td>"
-            f"<td>{html.escape(str(m['vitima']))}</td>"
-            f"<td>{html.escape(m['arma'])}</td>"
-            f"<td class='desc-momento'>{html.escape(m['desc'])}</td>"
-            f"<td><code>demo_gototick {max(0, m['tick'] - 320)}</code></td></tr>"
-            for m in momentos)
+        linhas_mom = "".join(linha_momento(m) for m in momentos)
+
+        # assinatura da mira (observacional)
+        ass = p.get("assinatura") or {}
+        celulas_ass = ""
+        if ass.get("dp_reacao_ms") is not None:
+            celulas_ass += (f"<div><b>{ass['dp_reacao_ms']:.0f} ms</b>"
+                            f"dp da reação (n={ass['n_reacoes']})</div>")
+        if ass.get("suavidade_z") is not None:
+            celulas_ass += (f"<div><b>{ass['suavidade_z']:+.1f}</b>"
+                            "suavidade da mira (z)</div>")
+        if ass.get("spins"):
+            celulas_ass += (f"<div><b>{ass['spins']}</b>🌀 SPINS "
+                            "detectados</div>")
+
+        # D0.2: painel de descartes — decisões revisáveis sem reler o código
+        descartes = p.get("episodios_descarte", [])
+        detalhe_descartes = ""
+        if descartes:
+            linhas_desc = "".join(
+                linha_momento(m)
+                for m in sorted(descartes, key=lambda m: m["round"])[:40])
+            detalhe_descartes = f"""
+        <details style="margin-top:14px"><summary style="cursor:pointer;
+          color:var(--mudo);font-size:13px">Descartes e controles
+          ({len(descartes)}) — lances avaliados e excluídos, com o motivo
+          </summary>
+        <div class="tabela-scroll"><table>
+        <tr><th>Sinal</th><th class="num">Round</th><th>Vítima</th><th>Arma</th>
+            <th>Por que não pontua</th><th>Pular na demo (console)</th></tr>
+        {linhas_desc}</table></div></details>"""
 
         detalhe_momentos = f"""
         <h3>Momentos suspeitos ({len(p['momentos'])})</h3>
@@ -1714,10 +1788,12 @@ def gerar_html(jogadores, meta, hist):
       <div><b>{p['trocas']}</b>trocas de alvo oculto</div>
       <div><b>{p['smoke']}</b>kills por smoke</div>
       <div><b>{p['wallbang']}</b>wallbangs</div>
+      {celulas_ass}
     </div>
     {chips_html}
     {detalhe_comp}
     {detalhe_momentos}
+    {detalhe_descartes}
     {svg_radar(meta.get('radar'), p['momentos'])}
     <p class="links-jogador">
       SteamID: {sid}{hist_txt} ·
@@ -1819,6 +1895,11 @@ com seus próprios olhos (a demo pula pra ~5 s antes do lance).</div>
   alvo. Seguir um inimigo invisível pode ser leitura de jogo; LARGAR um
   invisível para achar outro invisível exige saber onde os dois estão. É
   assinatura de radar/ESP, não de aimbot.</li>
+<li><strong>Assinatura da mira (observacional):</strong> dp da reação —
+  variância do tempo mira-no-alvo→kill (humano: 400–880 ms de dp; triggerbot
+  teria dezenas de ms); suavidade — jerk do yaw comparado ao lobby (z muito
+  negativo = mira suave demais, típico de aimbot humanizado); 🌀 spins —
+  giros &gt;120°/tick (humano: zero). São contexto, não pontuam.</li>
 <li><strong>💨 Kill por smoke:</strong> só pontua se foi tiro PRECISO (≤4 tiros
   em 2 s) a ≥7 m — spammar posição conhecida através da fumaça é jogada normal
   e aparece como 🌫️ sem pontuar. Filtro calibrado com feedback de jogador

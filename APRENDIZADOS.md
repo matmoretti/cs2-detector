@@ -126,6 +126,13 @@ fica desnecessário para aquele padrão.
   sinal limpo. Wallbang/smoke/cego ficam fora (têm sinais próprios).
 - **Assinatura da mira no pipeline:** integrar o protótipo validado (dp de
   reação, jerk, spinbot) como sinais nativos do analisar.py.
+  **Status: codificado como observação (v6.15)** — dp da reação (n≥8),
+  suavidade (jerk mediano do yaw em z-score contra o lobby) e spins
+  (>120°/tick) no card de cada jogador, sem peso. Primeiro dado: o caso de
+  calibração tem suavidade z=-2,3 (outlier extremo do lobby; 2º lugar: -0,6)
+  com dp de reação humana (681 ms) e zero spins. Duas hipóteses em aberto:
+  suavizador de mira OU consequência do ESP legit (quem pré-mira certo quase
+  não corrige — janelas de kill suaves). Decidir só com mais lobbies.
 - **Correlação de tracking (forense):** corr entre Δdireção-ao-alvo e Δmira
   distingue wallhack de tracking (corr→+1) de prefire/posição (corr~0). Alvo
   PARADO derrota o teste — precisa de alvo em movimento. Validado no caso
