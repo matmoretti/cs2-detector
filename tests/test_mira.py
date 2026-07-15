@@ -16,7 +16,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from analisar import (norm180, giro_mira, desvio_mira, escada,
                       teammate_spotou, premira_informada, segundos_no_round,
                       reacao_pos_los, ultima_visao, passos_audiveis,
-                      correlacao, correlacao_defasada)
+                      correlacao, correlacao_defasada,
+                      dist_ponto_segmento, smoke_na_los)
 
 
 class TestNorm180(unittest.TestCase):
@@ -316,6 +317,52 @@ class TestCorrelacao(unittest.TestCase):
         r0, melhor_r, defas = correlacao_defasada(alvo, list(alvo))
         self.assertEqual(defas, 0)
         self.assertAlmostEqual(r0, 1.0, places=6)
+
+
+class TestDistPontoSegmento(unittest.TestCase):
+    def test_ponto_sobre_o_meio(self):
+        # segmento no eixo X, ponto 10u acima do meio
+        self.assertAlmostEqual(
+            dist_ponto_segmento(50, 10, 0, 0, 0, 0, 100, 0, 0), 10.0)
+
+    def test_ponto_alem_da_ponta(self):
+        # projeção cai fora do segmento → distância até a ponta B
+        self.assertAlmostEqual(
+            dist_ponto_segmento(110, 0, 0, 0, 0, 0, 100, 0, 0), 10.0)
+
+    def test_segmento_degenerado(self):
+        self.assertAlmostEqual(
+            dist_ponto_segmento(3, 4, 0, 0, 0, 0, 0, 0, 0), 5.0)
+
+
+class TestSmokeNaLos(unittest.TestCase):
+    """D3.3: smoke ativa cruzando a linha atacante→vítima."""
+    # smoke no meio do caminho (centro efetivo em z+64), ativa em [1000, 2412]
+    SMOKES = [(500.0, 0.0, -64.0, 1000, 2412)]
+    A = (0.0, 0.0, 0.0)
+    V = (1000.0, 0.0, 0.0)
+
+    def test_cruzando(self):
+        r = smoke_na_los(self.SMOKES, self.A, self.V, 1064)
+        self.assertIsNotNone(r)
+        dist, idade, restante = r
+        self.assertAlmostEqual(dist, 0.0)
+        self.assertAlmostEqual(idade, 1.0)       # 64 ticks após detonar
+        self.assertAlmostEqual(restante, 21.0625)
+
+    def test_fora_da_janela_de_tempo(self):
+        self.assertIsNone(smoke_na_los(self.SMOKES, self.A, self.V, 999))
+        self.assertIsNone(smoke_na_los(self.SMOKES, self.A, self.V, 2413))
+
+    def test_longe_da_los(self):
+        smokes = [(500.0, 500.0, -64.0, 1000, 2412)]  # 500u ao lado
+        self.assertIsNone(smoke_na_los(smokes, self.A, self.V, 1100))
+
+    def test_escolhe_a_mais_central(self):
+        smokes = [(500.0, 100.0, -64.0, 1000, 2412),
+                  (500.0, 10.0, -64.0, 1000, 2412)]
+        dist, _, _ = smoke_na_los(smokes, self.A, self.V, 1100)
+        self.assertAlmostEqual(dist, 10.0)
 
 
 if __name__ == "__main__":

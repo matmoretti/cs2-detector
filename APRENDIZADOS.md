@@ -138,6 +138,16 @@ fica desnecessário para aquele padrão.
   CIRÚRGICO". Primeiros dados (Dust2): suspeito principal 3x, outros dois
   jogadores 1x cada. Ganha peso no score quando houver baseline de mais
   partidas (regra do projeto: sinal novo observa antes de pontuar).
+  **v6.12:** com os dados reais de smoke (D3.3), os 3 GATILHO do caso de
+  calibração foram por nuvens FRESCAS (0,6/1,7/2,6 s de vida em ~22 s —
+  totalmente opacas, uma a 27 u do centro): visão parcial por dissipação
+  está excluída nesses lances. Contra-exemplo a vigiar: smoke kill com
+  `tempo_restante_smoke_s` ≤ ~2,5 s pode ser visão legítima (o desc marca
+  "DISSIPANDO").
+- **`thrusmoke` sem smoke correspondente (limite conhecido, v6.12):** 1 das
+  6 smoke kills do caso de calibração tem a flag mas nenhuma nuvem ativa a
+  ≤144 u da LOS estimada — raio e centro (z+64) são aproximações. Tratar
+  `idade_smoke_s=None` como "não medido", nunca como refutação da flag.
 - **Pré-mira parada em alvo oculto (ESP "legit"):** o descarte L3 (giro <12°,
   anti aim-assist) escondia o perfil que NÃO gira a mira porque já pré-mira
   certo — a vantagem do ESP legit aparece ANTES do tiro. **Status: codificado

@@ -126,9 +126,14 @@ em primeira pessoa antes de alterar `pontuar()`.
   (correção da mira no alvo oculto no último ¾ s — no wallbang rotulado
   mediu 1,1° ≈ 4x a cabeça na distância, batendo com o veredito do autor).
   Falta: lineup/ângulo comum, última posição e nota normalizada por hitbox.
-- ⏳ D3.3. Investigar dados de granadas de smoke (posição, duração e volume),
-  pois o evento `thrusmoke` só descreve o resultado da kill, não todo o
-  contexto visual do lance.
+- 🔨 D3.3. **v6.12:** `smokegrenade_detonate`/`expired` são confiáveis
+  (duração real medida: ~22,1 s); registro de smokes ativas por partida e,
+  em cada smoke kill, a idade da nuvem, o tempo restante e a distância do
+  centro à linha de visão — porque `thrusmoke` não distingue nuvem opaca de
+  uma DISSIPANDO (visão parcial legítima). Achado: os 3 GATILHO do caso de
+  calibração foram por smokes com ≤2,6 s de vida (opacas). Limite conhecido:
+  raio (144 u) e centro (z+64) são estimados — 1 kill com thrusmoke ficou sem
+  smoke correspondente na LOS. Falta: volume/forma real e uso como oclusão.
 
 **Pronto quando:** kills por smoke e prefire só são candidatas após passarem
 pelo modelo de informação legítima da D1; nenhum recebe peso por ocorrer uma
@@ -274,6 +279,14 @@ comparação antes/depois e justificativa em `APRENDIZADOS.md`.
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-15 · v6.12 (D3.3): dados reais de smoke. Registro de nuvens ativas
+  (detonate→expired por entityid; ~22,1 s medidos) e anotação por smoke kill:
+  idade, tempo restante e distância do centro à LOS. Endureceu o GATILHO
+  CIRÚRGICO do caso de calibração: as 3 kills foram por smokes FRESCAS
+  (0,6/1,7/2,6 s — totalmente opacas), uma delas cruzando a 27 u do centro.
+  Registrada 1 discrepância (thrusmoke sem smoke na LOS estimada) — limite
+  do raio/centro aproximados, documentado. Features d0.6; +7 testes (86).
 
 - 2026-07-15 · v6.11 (D2.1 parcial): correlação mira↔alvo nativa. Para cada
   TRACK/TRACK-PAREDE, Pearson entre as variações angulares da direção ao alvo

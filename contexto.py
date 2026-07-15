@@ -30,8 +30,8 @@ import datetime
 # sempre que a semântica de um campo mudar — o dataset guarda com qual versão
 # cada linha foi gerada.
 SCHEMA_VERSAO = "d0.1"      # formato do registro de episódio (este arquivo)
-VERSAO_FEATURES = "d0.5"    # semântica dos campos de contexto/geometria/mira
-VERSAO_REGRAS = "v6.11"     # versão do detector que emitiu a saída por regra
+VERSAO_FEATURES = "d0.6"    # semântica dos campos de contexto/geometria/mira
+VERSAO_REGRAS = "v6.12"     # versão do detector que emitiu a saída por regra
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
 PASTA_DADOS = os.path.join(PASTA, "dados")
@@ -225,6 +225,11 @@ def montar_episodio(mom, meta):
             "segundos_no_round": ctx.get("segundos_no_round"),
             # D3.2: spam (vários tiros) vs tiro único no lance
             "tiros_2s": ctx.get("tiros_2s"),
+            # D3.3 (v6.12): smoke real na LOS — idade importa (dissipando =
+            # possível visão parcial legítima; thrusmoke não distingue)
+            "idade_smoke_s": ctx.get("idade_smoke_s"),
+            "tempo_restante_smoke_s": ctx.get("tempo_restante_smoke_s"),
+            "dist_smoke_los_us": ctx.get("dist_smoke_los_us"),
             "idade_ultima_visao_s": (
                 conhecido(ctx["idade_ultima_visao_s"])
                 if ctx.get("idade_ultima_visao_s") is not None

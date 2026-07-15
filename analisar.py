@@ -62,6 +62,9 @@ REFLEXO_MAX_TICKS = 10  # ~156 ms: tiro letal até isso após a LOS abrir (vindo
                         # Calibrado na demo rotulada: confirmado=31 ms,
                         # refutado=250 ms; 9 das 13 kills <200 ms do lobby
                         # eram do caso de ground truth
+SMOKE_RAIO = 144.0          # raio aproximado da nuvem volumétrica do CS2 (u)
+SMOKE_DURACAO_TICKS = 1412  # ~22,1 s medidos (detonate→expired) em demo real;
+                            # usado só quando o evento 'expired' não existe
 
 ARMAS_IGNORAR = {
     "knife", "knife_t", "bayonet", "taser",
@@ -213,6 +216,37 @@ def reacao_pos_los(visivel, T, passo=2, max_atras=128, oclusao_min=3):
             return T - (t + passo), t + passo
         t -= passo
     return None, None
+
+
+def dist_ponto_segmento(px, py, pz, ax, ay, az, bx, by, bz):
+    """Menor distância do ponto P ao segmento A→B (3D)."""
+    abx, aby, abz = bx - ax, by - ay, bz - az
+    apx, apy, apz = px - ax, py - ay, pz - az
+    ab2 = abx * abx + aby * aby + abz * abz
+    if ab2 <= 1e-9:
+        return math.hypot(apx, apy, apz)
+    u = max(0.0, min(1.0, (apx * abx + apy * aby + apz * abz) / ab2))
+    return math.hypot(px - (ax + u * abx), py - (ay + u * aby),
+                      pz - (az + u * abz))
+
+
+def smoke_na_los(smokes, a, v, t, raio=SMOKE_RAIO):
+    """D3.3: qual smoke ATIVA cruza a linha atacante→vítima no tick t?
+
+    `smokes` = [(x, y, z, t_ini, t_fim), ...]. Retorna (dist_centro_los,
+    idade_s, restante_s) da smoke que cruza (dist ≤ raio) mais centralmente,
+    ou None. A idade importa: a flag `thrusmoke` da kill não diz se a nuvem
+    estava fresca (opaca) ou DISSIPANDO (visão parcial legítima).
+    """
+    melhor = None
+    for sx, sy, sz, t0, t1 in smokes:
+        if not (t0 <= t <= t1):
+            continue
+        d = dist_ponto_segmento(sx, sy, sz + 64.0,
+                                a[0], a[1], a[2], v[0], v[1], v[2])
+        if d <= raio and (melhor is None or d < melhor[0]):
+            melhor = (d, (t - t0) / 64.0, (t1 - t) / 64.0)
+    return melhor
 
 
 def correlacao(xs, ys):
@@ -428,6 +462,29 @@ def analisar_demo(caminho):
     except Exception:
         freeze_ticks = []
 
+    # D3.3: registro de smokes ativas (detonate→expired pareados por entityid)
+    smokes = []
+    try:
+        det = parser.parse_event("smokegrenade_detonate")
+        exp_por_ent = {}
+        try:
+            for _, e in parser.parse_event("smokegrenade_expired").iterrows():
+                exp_por_ent.setdefault(int(e["entityid"]),
+                                       []).append(int(e["tick"]))
+            for lst in exp_por_ent.values():
+                lst.sort()
+        except Exception:
+            pass
+        for _, d in det.iterrows():
+            t0 = int(d["tick"])
+            fins = exp_por_ent.get(int(d["entityid"]), [])
+            i = bisect.bisect_right(fins, t0)
+            t1 = fins[i] if i < len(fins) else t0 + SMOKE_DURACAO_TICKS
+            smokes.append((float(d["x"]), float(d["y"]), float(d["z"]),
+                           t0, t1))
+    except Exception as e:
+        print(f"  (eventos de smoke indisponíveis: {e})")
+
     # --- ticks necessários (janela antes de cada kill) ---
     ticks_necessarios = set()
     kills_validas = []
@@ -542,6 +599,22 @@ def analisar_demo(caminho):
             # preciso (não spray) e a uma distância em que não se vê nada
             dist_m = float(get(m, "distance", 0.0))
             n_tiros = tiros_ultimos_2s(a_sid, T)
+            # D3.3: qual smoke real estava na linha de visão, e com que idade?
+            # (thrusmoke não distingue nuvem fresca/opaca de uma DISSIPANDO)
+            info_smoke = None
+            if a_kill and v_kill:
+                info_smoke = smoke_na_los(
+                    smokes, (a_kill[0], a_kill[1], a_kill[2] + 64.0),
+                    (v_kill[0], v_kill[1], v_kill[2] + 32.0), T)
+            extra_smoke = ""
+            ctx_smoke = {}
+            if info_smoke:
+                ctx_smoke = {"dist_smoke_los_us": info_smoke[0],
+                             "idade_smoke_s": info_smoke[1],
+                             "tempo_restante_smoke_s": info_smoke[2]}
+                extra_smoke = (f" · smoke com {info_smoke[1]:.1f} s de vida"
+                               + (" — DISSIPANDO, possível visão parcial"
+                                  if info_smoke[2] <= 2.5 else ""))
             if dist_m >= 7.0 and n_tiros <= 4:
                 atacante["smoke"] += 1
                 atacante["vitimas_smoke"].append(v_nome)
@@ -549,7 +622,7 @@ def analisar_demo(caminho):
                 # mira parada exige disparar a ±40 ms do cruzamento — repetido,
                 # sugere ESP de posição (anotação sem peso no score, em validação)
                 extra, peso_s = "", 3
-                ctx_s = {"smoke": True, "classe": "candidato"}
+                ctx_s = {"smoke": True, "classe": "candidato", **ctx_smoke}
                 v8 = lk.get((T - 8, v_sid))
                 a64 = lk.get((T - 64, a_sid))
                 if v_kill and v8 and a_kill and a64:
@@ -565,13 +638,13 @@ def analisar_demo(caminho):
                         peso_s = 4
                 momento("SMOKE", f"kill através de smoke a {dist_m:.0f} m com "
                                  f"tiro preciso ({n_tiros} tiro(s) em 2 s)"
-                                 f"{extra}", peso_s, ctx_s)
+                                 f"{extra}{extra_smoke}", peso_s, ctx_s)
             else:
                 motivo = ("briga dentro/perto da smoke"
                           if dist_m < 7.0 else f"spray de {n_tiros} tiros")
                 momento("SMOKE-COMUM", f"kill por smoke SEM pontuar "
                                        f"({motivo}, {dist_m:.0f} m)", 0,
-                        {"smoke": True, "classe": "descartado"})
+                        {"smoke": True, "classe": "descartado", **ctx_smoke})
         if int(get(m, "penetrated", 0)) > 0:
             atacante["wallbang"] += 1
             # D3.2: classificar o wallbang — spam vs tiro único, e a mira se
