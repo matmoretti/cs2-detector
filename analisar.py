@@ -72,6 +72,9 @@ TROCA_MIN_AMOSTRAS = 6  # ~0,75 s de mira grudada em cada alvo oculto
 TROCA_GAP_MAX = 4       # ~0,5 s no máximo entre soltar um alvo e travar noutro
 TROCA_SEP_MIN = 25.0    # giro mínimo entre os alvos (troca deliberada, não
                         # dois inimigos no mesmo ângulo)
+ANGULO_COMUM_MIN_JOG = 2  # ≥2 OUTROS jogadores seguram o mesmo ângulo no
+                          # baseline → estado "comum" (descritivo e provisório;
+                          # o limiar definitivo é calibração com rótulos, D5)
 
 ARMAS_IGNORAR = {
     "knife", "knife_t", "bayonet", "taser",
@@ -394,6 +397,29 @@ def premira_informada(oclusao_frac, viu_antes, barulho_recente, spotted_teammate
 # ---------------------------------------------------------------------------
 # Extração da demo
 # ---------------------------------------------------------------------------
+
+def estado_mira(parado, n_outros_angulo, oclusao_frac):
+    """D2.2: os três estados de uma janela de mira — DESCRIÇÃO, nunca exclusão.
+
+    'parada_angulo_comum' NÃO exculpa: o caso de calibração pré-mira ângulos
+    COMUNS na hora certa (dado v6.16 — 5-6 outros jogadores seguram os mesmos
+    ângulos das 3 PRE-MIRAs confirmáveis). O estado existe para o dataset ser
+    consultável por perfil de mira na calibração (D5), não para descartar.
+
+      * mira parada  -> ângulo comum / raro / sem baseline p/ comparar
+      * mira girando -> acompanha alvo oculto (candidato forte) / visível
+    """
+    if parado:
+        if n_outros_angulo is None:
+            return "parada_sem_baseline"
+        if n_outros_angulo >= ANGULO_COMUM_MIN_JOG:
+            return "parada_angulo_comum"
+        return "parada_angulo_raro"
+    if oclusao_frac is None:
+        return "acompanha_sem_geometria"
+    return ("acompanha_alvo_oculto" if oclusao_frac >= 0.7
+            else "acompanha_alvo_visivel")
+
 
 def get(linha, col, padrao):
     try:
@@ -1263,6 +1289,15 @@ def analisar_demo(caminho):
             mom["ctx"]["oclusao_frac"] = oclusao
 
         if parado:
+            # D2.2: toda mira PARADA consulta o baseline de ângulos e recebe
+            # o estado (descrição p/ calibração — nunca exclusão), inclusive
+            # os TRACK-PARADO que seguem descartados.
+            a_mid = lk.get(((seq_ini + seq_fim) // 2, a_sid))
+            r_ang = None
+            if a_mid:
+                r_ang = anotar_angulo_comum(mom, a_sid, a_mid, a_mid[3])
+            mom["ctx"]["estado_mira"] = estado_mira(
+                True, r_ang["jogadores"] if r_ang else None, oclusao)
             # D4.5: mira humana parada sobre alvo oculto sem info legítima →
             # promove do descarte para anotação observacional (peso 0). Pré-aim
             # de ângulo comum ainda não é descartável, então classe "ambíguo".
@@ -1283,11 +1318,8 @@ def analisar_demo(caminho):
                     "prévia, sem barulho da vítima e sem spotted de teammate. "
                     "Pré-aim de ângulo comum não é descartável: em observação, "
                     "sem peso")
-                # D4.5: o ângulo segurado é comum no baseline do mapa?
-                a_mid = lk.get(((seq_ini + seq_fim) // 2, a_sid))
-                if a_mid:
-                    mom["desc"] += txt_angulo_comum(
-                        anotar_angulo_comum(mom, a_sid, a_mid, a_mid[3]))
+                if r_ang:
+                    mom["desc"] += txt_angulo_comum(r_ang)
                 atacante["momentos"].append(mom)
                 atacante["premira"] += 1
                 atacante["vitimas_premira"].append(mom["vitima"])
@@ -1317,6 +1349,9 @@ def analisar_demo(caminho):
             mom["ctx"]["defasagem_ms"] = defas * 125.0
             mom["desc"] += (f" · correlação mira↔alvo r={r0:.2f} "
                             f"(máx {melhor_r:.2f}, defasagem {defas * 125:.0f} ms)")
+
+        # D2.2: estado da janela com a mira GIRANDO (acompanhando o alvo)
+        mom["ctx"]["estado_mira"] = estado_mira(False, None, oclusao)
 
         atras_parede = oclusao is not None and oclusao >= 0.7
         if atras_parede:

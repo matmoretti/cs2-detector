@@ -105,9 +105,13 @@ declarado da demo, não como certeza de ausência de call.
   desc. Duração/amplitude já eram gravadas. Falta: janelas de smoke (hoje só
   parede) e leitura calibrada dos valores (defasagem negativa = antecipação?
   visto 1x, em observação).
-- ⏳ D2.2. Separar três estados: mira parada em ângulo comum (não é tracking),
-  pré-aim plausível/ambíguo (anotação) e mira que acompanha o alvo oculto
-  (candidato forte).
+- ✅ D2.2. **v6.17:** estado descritivo em toda janela de mira classificada
+  (`estado_mira` no episódio): mira parada em ângulo COMUM (≥2 outros
+  jogadores no baseline) ou RARO, mira acompanhando alvo OCULTO (candidato
+  forte) ou visível. A leitura original "ângulo comum → não é tracking" foi
+  REFUTADA pelo dado v6.16 (o caso de calibração pré-mira ângulos comuns na
+  hora certa): os estados AGRUPAM lances para a calibração (D5), nunca
+  excluem. O limiar de "comum" (2) é provisório e só descritivo.
 - 🔨 D2.3. **v6.14:** varredura contínua da partida (passo ~125 ms, FORA das
   janelas de kill — primeira análise não-kill-cêntrica do projeto): mira
   grudada ≥0,75 s em inimigo oculto (≥70%) que troca em ≤0,5 s para OUTRO
@@ -293,6 +297,17 @@ comparação antes/depois e justificativa em `APRENDIZADOS.md`.
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-15 · v6.17 (D2.2 ✅): estado descritivo da janela de mira
+  (`estado_mira` no episódio): parada_angulo_comum/raro/sem_baseline,
+  acompanha_alvo_oculto/visivel/sem_geometria. TRACK-PARADO descartados
+  também consultam o baseline agora. A leitura exculpatória do roadmap
+  ("ângulo comum → não é tracking") NÃO foi implementada — refutada pelo
+  dado v6.16. Baseline de ângulos ampliado para 7 demos / 5 mapas (dust2,
+  nuke, inferno 2x, mirage 2x — incluindo partida nova analisada pelo autor
+  no mesmo dia —, cache). Validação no caso de calibração: 3 PRE-MIRA + 3
+  TRACK-PARADO = parada_angulo_comum (5–7 outros). Score inalterado;
+  features d0.10; +7 testes (113).
 
 - 2026-07-15 · v6.16 (mapa de ângulos comuns — pendência de D2.3/D3.2/D4.5):
   todo ângulo SEGURADO ≥0,75 s por qualquer jogador (varredura contínua) vira

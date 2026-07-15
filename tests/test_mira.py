@@ -18,7 +18,7 @@ from analisar import (norm180, giro_mira, desvio_mira, escada,
                       reacao_pos_los, ultima_visao, passos_audiveis,
                       correlacao, correlacao_defasada,
                       dist_ponto_segmento, smoke_na_los,
-                      runs_de_mira, pares_de_troca)
+                      runs_de_mira, pares_de_troca, estado_mira)
 
 
 class TestNorm180(unittest.TestCase):
@@ -396,6 +396,39 @@ class TestRunsETrocas(unittest.TestCase):
         runs = [("A", 0, 5), ("B", 6, 11), ("C", 12, 17)]
         pares = pares_de_troca(runs, 2)
         self.assertEqual(len(pares), 2)
+
+
+class TestEstadoMira(unittest.TestCase):
+    """D2.2 (v6.17): estados são DESCRIÇÃO para calibração, nunca exclusão."""
+
+    def test_parada_angulo_comum(self):
+        self.assertEqual(estado_mira(True, 5, 1.0), "parada_angulo_comum")
+
+    def test_parada_angulo_raro(self):
+        self.assertEqual(estado_mira(True, 0, 1.0), "parada_angulo_raro")
+        self.assertEqual(estado_mira(True, 1, 1.0), "parada_angulo_raro")
+
+    def test_parada_sem_baseline_para_comparar(self):
+        self.assertEqual(estado_mira(True, None, 1.0), "parada_sem_baseline")
+
+    def test_acompanha_alvo_oculto(self):
+        self.assertEqual(estado_mira(False, None, 0.9),
+                         "acompanha_alvo_oculto")
+
+    def test_acompanha_alvo_visivel(self):
+        self.assertEqual(estado_mira(False, None, 0.1),
+                         "acompanha_alvo_visivel")
+
+    def test_acompanha_sem_geometria(self):
+        self.assertEqual(estado_mira(False, None, None),
+                         "acompanha_sem_geometria")
+
+    def test_limiar_de_oclusao_igual_ao_do_track_parede(self):
+        # 70% é o mesmo corte do TRACK-PAREDE: estados e sinal não divergem
+        self.assertEqual(estado_mira(False, None, 0.7),
+                         "acompanha_alvo_oculto")
+        self.assertEqual(estado_mira(False, None, 0.69),
+                         "acompanha_alvo_visivel")
 
 
 if __name__ == "__main__":

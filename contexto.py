@@ -30,8 +30,8 @@ import datetime
 # sempre que a semântica de um campo mudar — o dataset guarda com qual versão
 # cada linha foi gerada.
 SCHEMA_VERSAO = "d0.1"      # formato do registro de episódio (este arquivo)
-VERSAO_FEATURES = "d0.9"    # semântica dos campos de contexto/geometria/mira
-VERSAO_REGRAS = "v6.16"     # versão do detector que emitiu a saída por regra
+VERSAO_FEATURES = "d0.10"   # semântica dos campos de contexto/geometria/mira
+VERSAO_REGRAS = "v6.17"     # versão do detector que emitiu a saída por regra
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
 PASTA_DADOS = os.path.join(PASTA, "dados")
@@ -276,6 +276,10 @@ def montar_episodio(mom, meta):
             "angulo_comum_ocorrencias": ctx.get("angulo_comum_ocorrencias"),
             "angulo_comum_demos_baseline": ctx.get(
                 "angulo_comum_demos_baseline"),
+            # D2.2 (v6.17): estado descritivo da janela de mira — parada em
+            # ângulo comum/raro ou acompanhando alvo oculto/visível. NUNCA é
+            # exclusão: 'parada_angulo_comum' não exculpa (v6.16).
+            "estado_mira": ctx.get("estado_mira"),
         },
 
         # Contraprovas: informação legítima que poderia explicar a suspeita.

@@ -180,7 +180,10 @@ fica desnecessário para aquele padrão.
   TROCA-OCULTA da mesma demo variaram de 1 a 9 outros jogadores. Limiar de
   "comum o suficiente" é calibração com rótulos (D5), nunca regra a priori.
   Aproximações declaradas: pitch ignorado, célula/setor discretos, run longa
-  conta 1 ocorrência.
+  conta 1 ocorrência. **v6.17 (D2.2):** os três estados viraram campo
+  descritivo do episódio (`estado_mira`: parada_angulo_comum/raro,
+  acompanha_alvo_oculto/visivel) — vocabulário para agrupar lances na
+  calibração, sem poder de exclusão.
 - **Pré-mira parada em alvo oculto (ESP "legit"):** o descarte L3 (giro <12°,
   anti aim-assist) escondia o perfil que NÃO gira a mira porque já pré-mira
   certo — a vantagem do ESP legit aparece ANTES do tiro. **Status: codificado
