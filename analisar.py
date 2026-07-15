@@ -37,6 +37,8 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from demoparser2 import DemoParser
 
+import contexto  # contrato de episódio forense (Fase D0 / M0)
+
 PASTA = os.path.dirname(os.path.abspath(__file__))
 ARQ_HISTORICO = os.path.join(PASTA, "historico.json")
 
@@ -178,6 +180,9 @@ def novo_jogador(nome):
         # dispara o mesmo sinal em vários atacantes)
         "vitimas_smoke": [], "vitimas_track": [], "vitimas_parede": [],
         "momentos": [],
+        # episódios descartados que vão só para o dataset forense (não poluem
+        # o HTML) — ex.: tracking com a mira parada segurando ângulo
+        "episodios_descarte": [],
     }
 
 
@@ -232,6 +237,14 @@ def analisar_demo(caminho):
     except Exception:
         header = {}
     mapa = header.get("map_name", "?")
+
+    # identidade/reprodutibilidade do episódio (Fase D0)
+    demo_hash = contexto.hash_demo(caminho)
+    versao_parser = contexto.versao_demoparser()
+    try:
+        tickrate = int(header.get("tickrate") or 64)
+    except (TypeError, ValueError):
+        tickrate = 64
 
     kills_df = parser.parse_event("player_death", other=["total_rounds_played"])
     try:
@@ -304,6 +317,7 @@ def analisar_demo(caminho):
         rodada = int(get(m, "total_rounds_played", 0)) + 1
         arma = str(get(m, "weapon", "?"))
         headshot = bool(get(m, "headshot", False))
+        dist_kill = float(get(m, "distance", 0.0))
 
         atacante = jog(a_sid, a_nome)
         vitima = jog(v_sid, v_nome)
@@ -315,16 +329,30 @@ def analisar_demo(caminho):
         a_kill = lk.get((T, a_sid))
         v_kill = lk.get((T, v_sid))
 
-        def momento(tipo, desc, peso):
+        def momento(tipo, desc, peso, ctx=None, so_dataset=False):
+            # ctx = observáveis já calculados neste lance (o que faltar vira
+            # 'desconhecido' com razão no contrato). Campos comuns a toda kill
+            # (janelas, distância) entram aqui uma vez só.
+            ctx = dict(ctx or {})
+            ctx.setdefault("janela_contexto_ini", max(1, T - JANELA_CARREGA))
+            ctx.setdefault("janela_forense_ini", max(1, T - JANELA))
+            ctx.setdefault("distancia_m", dist_kill)
+            if a_kill and v_kill:
+                ctx.setdefault("distancia_us", math.hypot(
+                    v_kill[0] - a_kill[0], v_kill[1] - a_kill[1],
+                    v_kill[2] - a_kill[2]))
             d = {
                 "tipo": tipo, "desc": desc, "round": rodada, "tick": T,
                 "vitima": v_nome, "arma": arma, "peso": peso,
+                "a_sid": a_sid, "v_sid": v_sid, "ctx": ctx,
                 "apos": [round(a_kill[0]), round(a_kill[1]),
                          round(a_kill[2])] if a_kill else None,
                 "vpos": [round(v_kill[0]), round(v_kill[1]),
                          round(v_kill[2])] if v_kill else None,
             }
-            atacante["momentos"].append(d)
+            destino = (atacante["episodios_descarte"] if so_dataset
+                       else atacante["momentos"])
+            destino.append(d)
             return d
 
         if get(m, "thrusmoke", False):
@@ -339,12 +367,15 @@ def analisar_demo(caminho):
                 # mira parada exige disparar a ±40 ms do cruzamento — repetido,
                 # sugere ESP de posição (anotação sem peso no score, em validação)
                 extra, peso_s = "", 3
+                ctx_s = {"smoke": True, "classe": "candidato"}
                 v8 = lk.get((T - 8, v_sid))
                 a64 = lk.get((T - 64, a_sid))
                 if v_kill and v8 and a_kill and a64:
                     vel_v = math.hypot(v_kill[0] - v8[0],
                                        v_kill[1] - v8[1]) / (8 / 64.0)
                     giro = giro_mira(a64[3], a64[4], a_kill[3], a_kill[4])
+                    ctx_s["velocidade_alvo_us"] = vel_v
+                    ctx_s["giro_mira_deg"] = giro
                     if vel_v >= 150 and giro <= 3.0:
                         extra = (f" — GATILHO CIRÚRGICO: alvo cruzando a "
                                  f"{vel_v:.0f} u/s com a mira parada "
@@ -352,12 +383,13 @@ def analisar_demo(caminho):
                         peso_s = 4
                 momento("SMOKE", f"kill através de smoke a {dist_m:.0f} m com "
                                  f"tiro preciso ({n_tiros} tiro(s) em 2 s)"
-                                 f"{extra}", peso_s)
+                                 f"{extra}", peso_s, ctx_s)
             else:
                 motivo = ("briga dentro/perto da smoke"
                           if dist_m < 7.0 else f"spray de {n_tiros} tiros")
                 momento("SMOKE-COMUM", f"kill por smoke SEM pontuar "
-                                       f"({motivo}, {dist_m:.0f} m)", 0)
+                                       f"({motivo}, {dist_m:.0f} m)", 0,
+                        {"smoke": True, "classe": "descartado"})
         if int(get(m, "penetrated", 0)) > 0:
             atacante["wallbang"] += 1
             momento("PAREDE", "kill através de parede/objeto", 2)
@@ -410,16 +442,21 @@ def analisar_demo(caminho):
         if 0 < ticks_no_alvo <= JANELA:
             reacao = ticks_no_alvo
 
+        desvio_kill = desvios[T][0] if T in desvios else None
         if (snap >= FLICK_MIN_GRAUS and reacao is not None
                 and reacao <= FLICK_REACAO_MAX and headshot):
             atacante["flicks"] += 1
             momento("FLICK", f"giro de {snap:.0f}° terminando em headshot "
-                             f"em {reacao * 15.6:.0f} ms", 5)
+                             f"em {reacao * 15.6:.0f} ms", 5,
+                    {"giro_mira_deg": snap, "desvio_min_deg": desvio_kill,
+                     "duracao_s": reacao / 64.0})
         elif (reacao is not None and reacao <= REACAO_RAPIDA_MAX
                 and snap >= REACAO_SNAP_MIN):
             atacante["reacoes"] += 1
             momento("REAÇÃO", f"mira chegou no alvo e matou em "
-                              f"{reacao * 15.6:.0f} ms (giro de {snap:.0f}°)", 3)
+                              f"{reacao * 15.6:.0f} ms (giro de {snap:.0f}°)", 3,
+                    {"giro_mira_deg": snap, "desvio_min_deg": desvio_kill,
+                     "duracao_s": reacao / 64.0})
 
         # tracking: maior sequência contínua de mira no alvo ANTES do confronto
         melhor_seq, seq_ini, seq_fim = 0, None, None
@@ -465,18 +502,35 @@ def analisar_demo(caminho):
                 vitima_barulho = (bisect.bisect_right(barulho_v, seq_fim)
                                   - bisect.bisect_left(barulho_v, seq_ini - 320)) > 0
 
+                duracao_s = melhor_seq / 64.0
+                ctx_track = {
+                    "mudanca_angular_alvo_deg": giro_necessario,
+                    "duracao_s": duracao_s,
+                    "velocidade_alvo_us": movimento / duracao_s if duracao_s else None,
+                    "barulho_recente": vitima_barulho,
+                }
                 if giro_necessario < TRACK_MIN_GIRO:
-                    pass  # segurar ângulo parado — jogada normal, nem registra
+                    # segurar ângulo parado — jogada normal. Não vai para o HTML,
+                    # mas fica no dataset como controle 'descartado' (D0.2): sem
+                    # registro não dá para calibrar o limiar de giro sem intuição.
+                    momento("TRACK-PARADO",
+                            f"mira segurou ângulo (giro de {giro_necessario:.0f}° "
+                            f"< {TRACK_MIN_GIRO:.0f}°) por {duracao_s:.1f} s — "
+                            "jogada normal, não é tracking", 0,
+                            {**ctx_track, "classe": "descartado"},
+                            so_dataset=True)
                 elif vitima_barulho:
                     momento("TRACK-INFO", f"mira acompanhou o alvo por "
                             f"{melhor_seq / 64.0:.1f} s, mas a vítima atirou/"
                             "jogou granada nos 5 s anteriores (posição "
-                            "revelada — não pontua)", 0)
+                            "revelada — não pontua)", 0,
+                            {**ctx_track, "classe": "descartado"})
                 else:
                     mom = momento("TRACK", f"mira ACOMPANHOU alvo em movimento "
                                   f"(giro de {giro_necessario:.0f}°) por "
                                   f"{melhor_seq / 64.0:.1f} s antes da kill, "
-                                  "sem barulho da vítima nos 5 s anteriores", 4)
+                                  "sem barulho da vítima nos 5 s anteriores", 4,
+                                  {**ctx_track, "classe": "candidato"})
                     candidatos_track.append((atacante, mom, amostras,
                                              a_sid, v_sid, seq_ini))
 
@@ -494,9 +548,12 @@ def analisar_demo(caminho):
                         (a[0], a[1], a[2] + 64.0), (v[0], v[1], v[2] + 32.0)):
                     viu_antes = True
                     break
+            # só é contraprova confiável quando houve geometria para checar
+            mom["ctx"]["viu_antes"] = viu_antes
         if viu_antes:
             mom["tipo"] = "TRACK-VIU"
             mom["peso"] = 0
+            mom["ctx"]["classe"] = "descartado"
             mom["desc"] += (" — mas o atacante teve linha de visão para o alvo "
                             "segundos antes (última posição conhecida — não pontua)")
             continue
@@ -506,6 +563,7 @@ def analisar_demo(caminho):
             invisiveis = sum(1 for a, v in amostras
                              if not checker.is_visible(a, v))
             frac = invisiveis / len(amostras)
+            mom["ctx"]["oclusao_frac"] = frac
             if frac >= 0.7:
                 atras_parede = True
                 mom["tipo"] = "TRACK-PAREDE"
@@ -538,6 +596,25 @@ def analisar_demo(caminho):
         jogadores[sid]["acertos"] += 1
         if str(get(h, "hitgroup", "")) == "head":
             jogadores[sid]["acertos_cabeca"] += 1
+
+    # --- Fase D0: grava cada lance como episódio forense reproduzível ---
+    # (não altera score nem HTML; só materializa o contexto para calibração/ML)
+    meta_ep = {
+        "demo_hash": demo_hash, "arquivo": os.path.basename(caminho),
+        "mapa": mapa, "tickrate": tickrate, "versao_parser": versao_parser,
+        "tem_geometria": checker is not None,
+    }
+    episodios = []
+    for p in jogadores.values():
+        for mom in p["momentos"]:
+            episodios.append(contexto.montar_episodio(mom, meta_ep))
+        for mom in p["episodios_descarte"]:
+            episodios.append(contexto.montar_episodio(mom, meta_ep))
+    if episodios:
+        contexto.registrar_jogadores(jogadores)
+        novos, ign = contexto.salvar_episodios(episodios)
+        print(f"  Episódios forenses: +{novos} novos, {ign} já existiam "
+              f"→ dados/episodios.jsonl")
 
     return jogadores, {"mapa": mapa, "rounds": total_rounds,
                        "arquivo": os.path.basename(caminho),

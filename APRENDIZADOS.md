@@ -62,6 +62,17 @@ fica desnecessário para aquele padrão.
   invisível do inimigo só vale como padrão quando não há explicação legítima
   registrada. Uma decisão que funcionou é resultado; evidência é a correlação
   repetida entre decisão e posição oculta, com contraprovas aplicadas.
+- **Dataset de episódios (D0.1):** cada lance — candidato OU descartado — vira
+  um registro em `dados/episodios.jsonl` (`contexto.py`). A perícia agora pode
+  consultar o contexto bruto de um lance sem reprocessar a demo, e o veredito
+  humano entra no campo `rotulo_humano` (não sobrescrever o histórico). Regra do
+  contrato: fonte que a demo não expõe (radar/*spotted*, voz) é `desconhecido`
+  COM razão, **nunca `não`** — ausência de evidência não é evidência de ausência.
+- **`giro_mira()` é uma aproximação, não distância angular verdadeira:** ela
+  escala a diferença de yaw por `cos(pitch de destino)`, então NÃO é simétrica
+  (trocar a ordem dos dois pontos muda o valor). É adequada para comparar giros
+  em pitch baixo/médio; em pitch alto o componente horizontal encolhe. Não tratar
+  como métrica exata em lances muito inclinados. (Fixado em `tests/test_mira.py`.)
 
 ## Pendentes (descobertos, ainda não codificados)
 

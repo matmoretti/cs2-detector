@@ -1,0 +1,98 @@
+# -*- coding: utf-8 -*-
+"""Testes das funções puras de mira/pontuação do analisar.py.
+
+Rode da raiz do projeto:  python -m unittest discover -s tests
+(A primeira lição do detector — L3 — nasceu de um erro de medição de mira;
+estes testes fixam a matemática que sustenta os vereditos.)
+"""
+
+import os
+import sys
+import math
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from analisar import norm180, giro_mira, desvio_mira, escada
+
+
+class TestNorm180(unittest.TestCase):
+    def test_zero(self):
+        self.assertAlmostEqual(norm180(0.0), 0.0)
+
+    def test_wrap_positivo(self):
+        self.assertAlmostEqual(norm180(190.0), -170.0)
+
+    def test_wrap_negativo(self):
+        self.assertAlmostEqual(norm180(-190.0), 170.0)
+
+    def test_volta_completa(self):
+        self.assertAlmostEqual(norm180(360.0), 0.0)
+
+    def test_meia_volta(self):
+        # 180 e -180 são o mesmo ponto; a convenção aqui devolve -180
+        self.assertAlmostEqual(abs(norm180(180.0)), 180.0)
+
+
+class TestGiroMira(unittest.TestCase):
+    def test_sem_giro(self):
+        self.assertAlmostEqual(giro_mira(10.0, 5.0, 10.0, 5.0), 0.0)
+
+    def test_giro_yaw_puro(self):
+        # 90° de yaw com pitch 0 → giro de ~90°
+        self.assertAlmostEqual(giro_mira(0.0, 0.0, 90.0, 0.0), 90.0, places=4)
+
+    def test_giro_pitch_puro(self):
+        self.assertAlmostEqual(giro_mira(0.0, 0.0, 0.0, 30.0), 30.0, places=4)
+
+    def test_yaw_reto_vale_o_delta(self):
+        # olhando reto (pitch 0), 40° de yaw dão ~40° de giro
+        self.assertAlmostEqual(giro_mira(0.0, 0.0, 40.0, 0.0), 40.0, places=4)
+
+    def test_yaw_encurta_com_pitch_alto(self):
+        # giro_mira é uma APROXIMAÇÃO: escala o yaw por cos(pitch de destino),
+        # então NÃO é simétrica. Com pitch constante 30°, o mesmo delta-yaw
+        # pesa menos no eixo horizontal (cos 30° ≈ 0,866).
+        g = giro_mira(0.0, 30.0, 40.0, 30.0)
+        self.assertAlmostEqual(g, 40.0 * math.cos(math.radians(30.0)), places=3)
+
+
+class TestDesvioMira(unittest.TestCase):
+    def test_alinhado_de_frente(self):
+        # atacante na origem olhando para +X (yaw=0), vítima 100u à frente
+        desvio, dist = desvio_mira(0, 0, 0, 0.0, 0.0, 100, 0, 0)
+        self.assertIsNotNone(desvio)
+        self.assertLess(desvio, 1.0)
+        self.assertGreater(dist, 90.0)
+
+    def test_alvo_atras(self):
+        # vítima atrás (mira 180° errada) → desvio grande
+        desvio, _ = desvio_mira(0, 0, 0, 0.0, 0.0, -100, 0, 0)
+        self.assertIsNotNone(desvio)
+        self.assertGreater(desvio, 90.0)
+
+    def test_vitima_em_cima_do_atacante(self):
+        # dxy < 1 em todos os alvos → sem ângulo definido
+        desvio, _ = desvio_mira(0, 0, 0, 0.0, 0.0, 0, 0, 0)
+        self.assertIsNone(desvio)
+
+
+class TestEscada(unittest.TestCase):
+    def test_abaixo_do_primeiro_degrau(self):
+        self.assertEqual(escada(0, [(1, 10), (2, 22)]), 0)
+
+    def test_primeiro_degrau(self):
+        self.assertEqual(escada(1, [(1, 10), (2, 22)]), 10)
+
+    def test_degrau_intermediario(self):
+        self.assertEqual(escada(2, [(1, 10), (2, 22), (3, 30)]), 22)
+
+    def test_acima_do_ultimo_pega_o_maior(self):
+        self.assertEqual(escada(9, [(1, 10), (2, 22)]), 22)
+
+    def test_lista_vazia(self):
+        self.assertEqual(escada(5, []), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

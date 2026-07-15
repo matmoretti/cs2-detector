@@ -44,20 +44,28 @@ real de um inimigo que o jogador não deveria conhecer. Um evento isolado nunca
 é veredito: cada sinal novo nasce como anotação, é calibrado em demos rotuladas
 e só então pode ganhar peso no score.
 
-### D0. Contrato de evidência e baseline ⏳
+### D0. Contrato de evidência e baseline 🔨
 
-- ⏳ D0.1. Criar uma estrutura única de `contexto_info` por lance/janela:
-  linha de visão atual e recente, último tick visto, barulho/utility da vítima,
-  smoke, distância, geometria e explicações que descartam a suspeita.
-- ⏳ D0.2. Registrar no relatório tanto os candidatos quanto os descartes
-  (`TRACK-VIU`, `TRACK-INFO`, etc.), com o motivo. O relatório deve permitir
-  revisar a decisão sem reler o código.
-- ⏳ D0.3. Montar um conjunto de calibração com lances legítimos conhecidos,
-  lances posteriormente associados a ban e lances ambíguos. Guardar o veredito
-  humano e o `demo_gototick`, nunca somente um rótulo por jogador.
+- ✅ D0.1. Estrutura única de episódio forense (`contexto.py` +
+  `dados/episodios.jsonl`): identidade com hash da demo e jogadores
+  pseudonimizados, janelas temporais, geometria/oclusão, mira, distância,
+  barulho e contraprovas. Fonte não extraível (radar/*spotted*, voz) é gravada
+  como `desconhecido` COM razão — nunca `não`. Cada lance vira um registro
+  versionado (schema/features/regras) e deduplicado por `episode_id`. Não
+  altera score nem HTML (`peso` inalterado). Coberto por testes (`tests/`).
+- 🔨 D0.2. Descartes agora são persistidos com o motivo: `SMOKE-COMUM`,
+  `TRACK-INFO`, `TRACK-VIU` (já no relatório) e o novo `TRACK-PARADO` (mira
+  segurando ângulo — antes descartado em silêncio, agora vai ao dataset).
+  Falta um painel de revisão que permita reavaliar cada decisão sem reler o
+  código.
+- 🔨 D0.3. O contrato já reserva `rotulo_humano` por episódio e guarda o
+  `demo_gototick` (via tick) e o contexto de cada lance. Falta a ferramenta de
+  rotulagem cega (dois revisores + adjudicação) para montar o conjunto de ouro.
 
 **Pronto quando:** todo sinal futuro recebe contexto e uma justificativa de
 inclusão/exclusão reproduzível; nenhum limiar é escolhido somente por intuição.
+**Estado:** a fundação de dados (M0 da ARQUITETURA-ML) está materializada; a
+calibração assistida por revisão (D0.3) é o próximo passo.
 
 ### D1. Modelo de informação legítima ⏳
 
@@ -238,6 +246,16 @@ comparação antes/depois e justificativa em `APRENDIZADOS.md`.
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-15 · v6.5 (D0.1): fundação de dados forense. Cada lance suspeito ou
+  descartado vira um **episódio** versionado e reproduzível em
+  `dados/episodios.jsonl` (novo módulo `contexto.py`), seguindo o contrato de
+  dados da ARQUITETURA-ML: hash da demo, jogadores pseudonimizados, janelas
+  temporais, geometria, mira e contraprovas — com fonte não extraível marcada
+  `desconhecido` + razão. Novo descarte `TRACK-PARADO` (mira segurando ângulo)
+  passa a ser registrado. Zero mudança de score/relatório; primeira suíte de
+  testes do projeto (`tests/`, 35 casos, `python -m unittest discover -s tests`).
+  Validado em demo real (de_inferno, 203 kills → 39 episódios, dedup OK).
 
 - 2026-07-14 · v6.4: forense de correlação de mira validada em caso real
   (7 lances: zero tracking por raio-x — wallhack de tracking descartado;

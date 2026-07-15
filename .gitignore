@@ -3,6 +3,9 @@ config.json
 historico.json
 relatorio*.html
 
+# Dataset forense local (episódios, SteamIDs, salt e mapa de pseudônimos)
+dados/
+
 # Demos e assets de mapa (baixe com o jogo / awpy get maps)
 *.dem
 maps/
