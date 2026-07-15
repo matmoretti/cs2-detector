@@ -58,9 +58,13 @@ e só então pode ganhar peso no score.
   segurando ângulo — antes descartado em silêncio, agora vai ao dataset).
   Falta um painel de revisão que permita reavaliar cada decisão sem reler o
   código.
-- 🔨 D0.3. O contrato já reserva `rotulo_humano` por episódio e guarda o
-  `demo_gototick` (via tick) e o contexto de cada lance. Falta a ferramenta de
-  rotulagem cega (dois revisores + adjudicação) para montar o conjunto de ouro.
+- 🔨 D0.3. Ferramenta `rotular.py` criada (revisões **append-only** — nunca
+  sobrescreve; `listar` + gravação por episódio) e **primeiras 4 revisões
+  reais gravadas** (caso de calibração, revisor único: autor): 3
+  `evidencia_forte` (wallbang com microajuste em alvo oculto; pré-mira em
+  contexto; pré-mira com reflexo pós-LOS rápido) e 1 `legitimo_explicado`
+  (falso positivo documentado do PRE-MIRA: abertura de round). Pendente:
+  protocolo cego com dois revisores + adjudicação para o conjunto de ouro.
 
 **Pronto quando:** todo sinal futuro recebe contexto e uma justificativa de
 inclusão/exclusão reproduzível; nenhum limiar é escolhido somente por intuição.
@@ -148,8 +152,10 @@ esperar flick, lock ou tracking perfeito para encontrar candidatos.
   mira parada (giro <12°) sobre alvo em movimento OCULTO ≥70%, sem visão
   prévia, barulho ou spotted. Baseline em 6 partidas: 1x/jogador é ruído
   normal; só o caso de calibração do autor repetiu (3x, vítimas distintas).
-  Falta: mapa de ângulos comuns e escada por vítimas distintas (após revisão
-  em primeira pessoa).
+  **1ª revisão do autor: 2 dos 3 confirmados** (contexto; reflexo pós-LOS)
+  **e 1 refutado** (abertura de round — falso positivo documentado); exclusão
+  por timing foi calibrada e REFUTADA antes de virar regra (v6.8). Falta:
+  reação pós-LOS, mapa de ângulos comuns e escada por vítimas distintas.
 - ⏳ D4.6. Reunir decisões de **prefire, wallbang e utility seletivos**: não
   apenas acertar alguém, mas escolher posição incomum/ocupada sem spam,
   lineup, visão recente ou outro sinal. D3 produz a evidência micro; aqui ela
@@ -256,6 +262,16 @@ comparação antes/depois e justificativa em `APRENDIZADOS.md`.
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-15 · v6.8 (D0.3): primeira rotulagem humana real + `rotular.py`
+  (revisões append-only). O autor revisou 4 lances do caso de calibração em
+  primeira pessoa: wallbang com microajuste em alvo oculto, PRE-MIRA em
+  contexto e PRE-MIRA com reflexo pós-LOS rápido (3x `evidencia_forte`) +
+  PRE-MIRA aos 4,8 s de round (`legitimo_explicado` — 1º falso positivo
+  documentado do sinal). A exclusão por timing de round foi calibrada e
+  REFUTADA antes de virar regra (lance confirmado aos 9,2 s); em vez disso,
+  `segundos_no_round` entra como contexto de todo episódio (features d0.2).
+  Próximo sinal: reação pós-LOS. +9 testes (59 no total).
 
 - 2026-07-15 · v6.7 (D4.5): anotação 🎯 PRE-MIRA — o primeiro sinal desenhado
   para ESP "legit" (mira humana, informação ilegítima). O descarte de giro

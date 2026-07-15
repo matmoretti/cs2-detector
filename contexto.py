@@ -30,7 +30,7 @@ import datetime
 # sempre que a semântica de um campo mudar — o dataset guarda com qual versão
 # cada linha foi gerada.
 SCHEMA_VERSAO = "d0.1"      # formato do registro de episódio (este arquivo)
-VERSAO_FEATURES = "d0.1"    # semântica dos campos de contexto/geometria/mira
+VERSAO_FEATURES = "d0.2"    # semântica dos campos de contexto/geometria/mira
 VERSAO_REGRAS = "v6.7"      # versão do detector que emitiu a saída por regra
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
@@ -220,6 +220,9 @@ def montar_episodio(mom, meta):
             "distancia_m": ctx.get("distancia_m"),
             "smoke": bool(ctx.get("smoke", False)),
             "velocidade_alvo_us": ctx.get("velocidade_alvo_us"),
+            # calibração futura: a 1ª revisão humana refutou exclusão por
+            # timing (confirmado aos 9,2 s vs refutado aos 4,8 s)
+            "segundos_no_round": ctx.get("segundos_no_round"),
             "idade_ultima_visao_s": (
                 conhecido(ctx["idade_ultima_visao_s"])
                 if ctx.get("idade_ultima_visao_s") is not None

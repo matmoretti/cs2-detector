@@ -63,6 +63,19 @@ fica desnecessário para aquele padrão.
   invisível do inimigo só vale como padrão quando não há explicação legítima
   registrada. Uma decisão que funcionou é resultado; evidência é a correlação
   repetida entre decisão e posição oculta, com contraprovas aplicadas.
+- **Calibrar ANTES de codificar (exclusão por timing de round, refutada):** a
+  1ª rotulagem humana derrubou uma exclusão "óbvia" antes de ela virar código.
+  Hipótese: pré-mira no comecinho do round é abertura normal (o autor refutou
+  um lance aos 4,8 s exatamente assim). Mas outro lance aos **9,2 s** foi
+  CONFIRMADO (reflexo pós-LOS rápido demais) — não existe limiar de timing
+  defensável com n=2. `segundos_no_round` ficou como CONTEXTO por episódio
+  (features d0.2); a exclusão espera mais rótulos. O que separa os dois lances
+  é a reação pós-LOS, não o relógio do round.
+- **Falso positivo documentado do 🎯 PRE-MIRA (dust2 R23):** segurar ângulo
+  para a rota padrão de abertura do TR aos ~5 s de round dispara o sinal, mas
+  é game sense comum (rótulo `legitimo_explicado`). Confirma a classe
+  "ambíguo" do sinal: sem mapa de ângulos comuns, 1x não diz nada — repetição
+  em vítimas/posições distintas continua sendo o critério.
 - **Dataset de episódios (D0.1):** cada lance — candidato OU descartado — vira
   um registro em `dados/episodios.jsonl` (`contexto.py`). A perícia agora pode
   consultar o contexto bruto de um lance sem reprocessar a demo, e o veredito
@@ -86,7 +99,10 @@ fica desnecessário para aquele padrão.
 - **Audibilidade com atenuação:** passo audível tem alcance (~1100 unidades) e
   oclusão; o modelo atual usa só velocidade >110 u/s.
 - **Reação pós-LOS:** medir o tempo entre a linha de visão abrir e o tiro
-  (≥200 ms = humano) para kills que terminam wall-tracks.
+  (≥200 ms = humano) para kills que terminam wall-tracks. **Corroborado pela
+  1ª rotulagem (dust2 R25):** o autor apontou "reflexo rápido demais, deve ter
+  info" num lance PRE-MIRA confirmado — é o discriminador natural entre
+  pré-aim de abertura normal e pré-aim informado. Próximo sinal a implementar.
 - **Assinatura da mira no pipeline:** integrar o protótipo validado (dp de
   reação, jerk, spinbot) como sinais nativos do analisar.py.
 - **Correlação de tracking (forense):** corr entre Δdireção-ao-alvo e Δmira

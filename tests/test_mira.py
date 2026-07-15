@@ -14,7 +14,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from analisar import (norm180, giro_mira, desvio_mira, escada,
-                      teammate_spotou, premira_informada)
+                      teammate_spotou, premira_informada, segundos_no_round)
 
 
 class TestNorm180(unittest.TestCase):
@@ -169,6 +169,27 @@ class TestPremiraInformada(unittest.TestCase):
     def test_limiar_de_oclusao(self):
         self.assertTrue(premira_informada(0.7, False, False, False))
         self.assertFalse(premira_informada(0.69, False, False, False))
+
+
+class TestSegundosNoRound(unittest.TestCase):
+    """Contexto de timing por episódio (não é regra — exclusão foi refutada
+    pela 1ª revisão humana: confirmado aos 9,2 s, refutado aos 4,8 s)."""
+
+    def test_sem_freeze_ends(self):
+        self.assertIsNone(segundos_no_round([], 1000))
+
+    def test_antes_do_primeiro_round(self):
+        self.assertIsNone(segundos_no_round([5000], 4000))
+
+    def test_meio_do_round(self):
+        # 640 ticks após o freeze a 64 t/s = 10 s
+        self.assertAlmostEqual(segundos_no_round([5000], 5640), 10.0)
+
+    def test_usa_o_round_mais_recente(self):
+        self.assertAlmostEqual(segundos_no_round([1000, 5000], 5064), 1.0)
+
+    def test_tickrate_diferente(self):
+        self.assertAlmostEqual(segundos_no_round([0], 128, tickrate=128), 1.0)
 
 
 if __name__ == "__main__":

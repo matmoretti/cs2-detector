@@ -180,6 +180,19 @@ def teammate_spotou(spot_por, team_por, a_sid, v_sid, tini, tfim, passo=16):
     return False
 
 
+def segundos_no_round(freeze_ticks, tick, tickrate=64):
+    """Segundos desde o último freeze_end antes do tick (None se desconhecido).
+
+    Contexto para calibração: a 1ª revisão humana refutou usar isso como
+    exclusão (lance confirmado aos 9,2 s, refutado aos 4,8 s — não há limiar
+    defensável com n=2). Fica registrado por episódio até haver mais rótulos.
+    """
+    i = bisect.bisect_right(freeze_ticks, tick) - 1
+    if i < 0:
+        return None
+    return (tick - freeze_ticks[i]) / float(tickrate)
+
+
 def premira_informada(oclusao_frac, viu_antes, barulho_recente, spotted_teammate):
     """D4.5 (observacional): mira parada apontada para alvo OCULTO sem fonte
     legítima de informação?
@@ -295,6 +308,13 @@ def analisar_demo(caminho):
     except Exception:
         total_rounds = 0
 
+    # timing de round: contexto por episódio (calibração futura — não é regra)
+    try:
+        freeze_ticks = sorted(
+            int(t) for t in parser.parse_event("round_freeze_end")["tick"])
+    except Exception:
+        freeze_ticks = []
+
     # --- ticks necessários (janela antes de cada kill) ---
     ticks_necessarios = set()
     kills_validas = []
@@ -380,6 +400,8 @@ def analisar_demo(caminho):
             ctx.setdefault("janela_contexto_ini", max(1, T - JANELA_CARREGA))
             ctx.setdefault("janela_forense_ini", max(1, T - JANELA))
             ctx.setdefault("distancia_m", dist_kill)
+            ctx.setdefault("segundos_no_round",
+                           segundos_no_round(freeze_ticks, T, tickrate))
             if a_kill and v_kill:
                 ctx.setdefault("distancia_us", math.hypot(
                     v_kill[0] - a_kill[0], v_kill[1] - a_kill[1],
