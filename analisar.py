@@ -636,6 +636,38 @@ def analisar_demo(caminho):
                                  f"{vel_v:.0f} u/s com a mira parada "
                                  f"(giro de {giro:.1f}° no último segundo)")
                         peso_s = 4
+                # D3.1: série do erro angular mira→alvo tick a tick no último
+                # segundo — o instante do disparo letal vs o erro MÍNIMO da
+                # janela. Disparar a ±40 ms do erro mínimo num alvo invisível
+                # cruzando é o timing "cirúrgico" (observacional, sem peso).
+                lst_f = tiros_ticks.get(a_sid, [])
+                i_f = bisect.bisect_right(lst_f, T)
+                t_fire = lst_f[i_f - 1] if i_f else None
+                melhor_e = None
+                for t in range(T - 64, T + 1):
+                    a = lk.get((t, a_sid))
+                    v = lk.get((t, v_sid))
+                    if not (a and v):
+                        continue
+                    e, _ = desvio_mira(a[0], a[1], a[2], a[3], a[4],
+                                       v[0], v[1], v[2])
+                    if e is not None and (melhor_e is None or e < melhor_e[1]):
+                        melhor_e = (t, e)
+                if melhor_e:
+                    ctx_s["erro_min_deg"] = melhor_e[1]
+                    if t_fire is not None and t_fire >= T - 64:
+                        af = lk.get((t_fire, a_sid))
+                        vf = lk.get((t_fire, v_sid))
+                        if af and vf:
+                            e_f, _ = desvio_mira(af[0], af[1], af[2], af[3],
+                                                 af[4], vf[0], vf[1], vf[2])
+                            if e_f is not None:
+                                ctx_s["erro_no_disparo_deg"] = e_f
+                        dt_ms = (t_fire - melhor_e[0]) * 15.625
+                        ctx_s["dt_disparo_erro_min_ms"] = dt_ms
+                        if extra:
+                            extra += (f"; disparo a {abs(dt_ms):.0f} ms do "
+                                      f"erro mínimo ({melhor_e[1]:.1f}°)")
                 momento("SMOKE", f"kill através de smoke a {dist_m:.0f} m com "
                                  f"tiro preciso ({n_tiros} tiro(s) em 2 s)"
                                  f"{extra}{extra_smoke}", peso_s, ctx_s)
