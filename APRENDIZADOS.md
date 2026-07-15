@@ -148,6 +148,18 @@ fica desnecessário para aquele padrão.
   6 smoke kills do caso de calibração tem a flag mas nenhuma nuvem ativa a
   ≤144 u da LOS estimada — raio e centro (z+64) são aproximações. Tratar
   `idade_smoke_s=None` como "não medido", nunca como refutação da flag.
+- **Timing cirúrgico agora é medido por lance (v6.13):** 4 das 6 smoke kills
+  precisas do caso de calibração dispararam a ≤62 ms do erro mínimo
+  mira→alvo, com erro mínimo de 0,08–0,19° — o tamanho angular da cabeça
+  invisível naquelas distâncias. `dt_disparo_erro_min_ms` fica no episódio;
+  a tese dos ±40 ms tem agora instrumento próprio.
+- **Sinais têm ESTILOS de cheat distintos (v6.14):** a 🔀 TROCA-OCULTA não
+  disparou no caso de calibração (0x) — ESP "legit" evita encarar paredes; o
+  sinal mira o wallhack descarado que segue o radar. Um sinal não disparar no
+  nosso cheater conhecido NÃO o invalida; cada sinal deve ser calibrado
+  contra o estilo que ele detecta. Piso de ruído atual: ~3,5 trocas/partida
+  espalhadas (máx 4x num jogador) — ângulos comuns explicam; o mapa de
+  ângulos (pendente) é o caminho para reduzir.
 - **Pré-mira parada em alvo oculto (ESP "legit"):** o descarte L3 (giro <12°,
   anti aim-assist) escondia o perfil que NÃO gira a mira porque já pré-mira
   certo — a vantagem do ESP legit aparece ANTES do tiro. **Status: codificado

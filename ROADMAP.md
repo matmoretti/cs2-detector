@@ -108,9 +108,15 @@ declarado da demo, não como certeza de ausência de call.
 - ⏳ D2.2. Separar três estados: mira parada em ângulo comum (não é tracking),
   pré-aim plausível/ambíguo (anotação) e mira que acompanha o alvo oculto
   (candidato forte).
-- ⏳ D2.3. Detectar troca sequencial entre alvos ocultos: a mira deixa de
-  seguir um inimigo não visível e passa a acompanhar outro, sem fonte de
-  informação nova. Este é um sinal de ESP/radar, não de aimbot.
+- 🔨 D2.3. **v6.14:** varredura contínua da partida (passo ~125 ms, FORA das
+  janelas de kill — primeira análise não-kill-cêntrica do projeto): mira
+  grudada ≥0,75 s em inimigo oculto (≥70%) que troca em ≤0,5 s para OUTRO
+  inimigo oculto com giro ≥25°, sem kill, sem barulho/visão recente/spotted
+  do novo alvo → anotação 🔀 `TROCA-OCULTA` (peso 0, ambíguo). Baseline
+  6 partidas: 21 anotações em 13 jogadores (máx 4x; caso de calibração: 0 —
+  ESP legit não encara paredes, o sinal mira o estilo descarado). Falta:
+  mapa de ângulos comuns para reduzir o piso de ruído e rótulos para
+  calibrar. A varredura é a fundação da linha do tempo de decisões (D4.1).
 
 **Pronto quando:** cada card mostra duração, giro necessário, giro da mira,
 correlação e as exclusões aplicadas. Validar visualmente todos os candidatos
@@ -279,6 +285,19 @@ comparação antes/depois e justificativa em `APRENDIZADOS.md`.
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-15 · v6.14 (D2.3): troca de mira entre alvos ocultos — primeiro
+  sinal FORA das janelas de kill (varredura contínua da partida, ~125 ms).
+  Largar um inimigo invisível e travar direto em outro invisível exige saber
+  onde os dois estão: assinatura de radar, não de aimbot. Exclusões: kill no
+  lance, barulho, visão recente, spotted. Baseline 6 partidas: 21 anotações /
+  13 jogadores (piso de ruído de ângulos comuns — documentado); caso de
+  calibração: 0 (perfil legit não encara parede). Peso 0; features d0.8;
+  +7 testes (93). A varredura funda o D4.1 (linha do tempo de decisões).
+
+- 2026-07-15 · v6.13 (D3.1): timing do disparo vs erro mínimo — 4 das 6 smoke
+  kills do caso de calibração dispararam a ≤62 ms do erro mínimo (0,08–0,19°,
+  o tamanho da cabeça invisível na distância; R16 a +16 ms). Observacional.
 
 - 2026-07-15 · v6.12 (D3.3): dados reais de smoke. Registro de nuvens ativas
   (detonate→expired por entityid; ~22,1 s medidos) e anotação por smoke kill:

@@ -17,7 +17,8 @@ from analisar import (norm180, giro_mira, desvio_mira, escada,
                       teammate_spotou, premira_informada, segundos_no_round,
                       reacao_pos_los, ultima_visao, passos_audiveis,
                       correlacao, correlacao_defasada,
-                      dist_ponto_segmento, smoke_na_los)
+                      dist_ponto_segmento, smoke_na_los,
+                      runs_de_mira, pares_de_troca)
 
 
 class TestNorm180(unittest.TestCase):
@@ -363,6 +364,38 @@ class TestSmokeNaLos(unittest.TestCase):
                   (500.0, 10.0, -64.0, 1000, 2412)]
         dist, _, _ = smoke_na_los(smokes, self.A, self.V, 1100)
         self.assertAlmostEqual(dist, 10.0)
+
+
+class TestRunsETrocas(unittest.TestCase):
+    """D2.3: detecção de mira grudada e troca entre alvos."""
+
+    def test_run_simples(self):
+        alvos = [None, "A", "A", "A", "A", None]
+        self.assertEqual(runs_de_mira(alvos, 4), [("A", 1, 4)])
+
+    def test_run_curto_demais(self):
+        self.assertEqual(runs_de_mira(["A", "A", "A", None], 4), [])
+
+    def test_none_quebra_o_run(self):
+        alvos = ["A", "A", None, "A", "A"]
+        self.assertEqual(runs_de_mira(alvos, 2), [("A", 0, 1), ("A", 3, 4)])
+
+    def test_troca_direta(self):
+        runs = [("A", 0, 5), ("B", 7, 12)]  # gap de 1 amostra
+        self.assertEqual(pares_de_troca(runs, 2), [(runs[0], runs[1])])
+
+    def test_gap_grande_nao_e_troca(self):
+        runs = [("A", 0, 5), ("B", 15, 20)]
+        self.assertEqual(pares_de_troca(runs, 2), [])
+
+    def test_mesmo_alvo_nao_e_troca(self):
+        runs = [("A", 0, 5), ("A", 7, 12)]
+        self.assertEqual(pares_de_troca(runs, 2), [])
+
+    def test_sequencia_a_b_c(self):
+        runs = [("A", 0, 5), ("B", 6, 11), ("C", 12, 17)]
+        pares = pares_de_troca(runs, 2)
+        self.assertEqual(len(pares), 2)
 
 
 if __name__ == "__main__":

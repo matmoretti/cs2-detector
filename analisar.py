@@ -65,6 +65,11 @@ REFLEXO_MAX_TICKS = 10  # ~156 ms: tiro letal até isso após a LOS abrir (vindo
 SMOKE_RAIO = 144.0          # raio aproximado da nuvem volumétrica do CS2 (u)
 SMOKE_DURACAO_TICKS = 1412  # ~22,1 s medidos (detonate→expired) em demo real;
                             # usado só quando o evento 'expired' não existe
+VARRE_PASSO = 8         # varredura contínua (D2.3): 1 amostra a cada ~125 ms
+TROCA_MIN_AMOSTRAS = 6  # ~0,75 s de mira grudada em cada alvo oculto
+TROCA_GAP_MAX = 4       # ~0,5 s no máximo entre soltar um alvo e travar noutro
+TROCA_SEP_MIN = 25.0    # giro mínimo entre os alvos (troca deliberada, não
+                        # dois inimigos no mesmo ângulo)
 
 ARMAS_IGNORAR = {
     "knife", "knife_t", "bayonet", "taser",
@@ -216,6 +221,33 @@ def reacao_pos_los(visivel, T, passo=2, max_atras=128, oclusao_min=3):
             return T - (t + passo), t + passo
         t -= passo
     return None, None
+
+
+def runs_de_mira(alvos, min_amostras):
+    """D2.3: sequências contíguas do MESMO alvo não-None numa lista de locks.
+
+    `alvos` = alvo travado (id) ou None, por amostra da varredura.
+    Retorna [(id, i_ini, i_fim)] só para sequências com o tamanho mínimo.
+    """
+    runs = []
+    ini = 0
+    n = len(alvos)
+    for i in range(1, n + 1):
+        if i == n or alvos[i] != alvos[ini]:
+            if alvos[ini] is not None and i - ini >= min_amostras:
+                runs.append((alvos[ini], ini, i - 1))
+            ini = i
+    return runs
+
+
+def pares_de_troca(runs, gap_max):
+    """Pares de runs consecutivos com alvos DIFERENTES e intervalo curto —
+    a mira solta um alvo e trava direto em outro."""
+    pares = []
+    for r1, r2 in zip(runs, runs[1:]):
+        if r1[0] != r2[0] and (r2[1] - r1[2] - 1) <= gap_max:
+            pares.append((r1, r2))
+    return pares
 
 
 def dist_ponto_segmento(px, py, pz, ax, ay, az, bx, by, bz):
@@ -378,6 +410,7 @@ def novo_jogador(nome):
         "flicks": 0, "reacoes": 0, "tracks": 0, "tracks_parede": 0,
         "premira": 0, "vitimas_premira": [],
         "reflexos": 0, "vitimas_reflexo": [],
+        "trocas": 0, "vitimas_troca": [],
         "tiros": 0, "acertos": 0, "acertos_cabeca": 0,
         # L7: escalada de score exige vítimas DISTINTAS (vítima previsível
         # dispara o mesmo sinal em vários atacantes)
@@ -499,16 +532,30 @@ def analisar_demo(caminho):
         kills_validas.append(m)
         ticks_necessarios.update(range(max(1, T - JANELA_CARREGA), T + 1))
 
+    # D2.3: a varredura contínua cobre a partida inteira em passo largo
+    # (detecta comportamento de mira FORA das janelas de kill)
+    ticks_varredura = []
+    if ticks_necessarios:
+        ticks_varredura = list(range(min(ticks_necessarios),
+                                     max(ticks_necessarios) + 1, VARRE_PASSO))
+    ticks_carregar = sorted(set(ticks_necessarios) | set(ticks_varredura))
     print(f"  {len(kills_validas)} kills; carregando mira/posição de "
-          f"{len(ticks_necessarios)} ticks (pode levar ~1 min)...")
+          f"{len(ticks_carregar)} ticks (pode levar ~1 min)...")
 
-    tdf = parser.parse_ticks(["X", "Y", "Z", "yaw", "pitch", "is_alive"],
-                             ticks=sorted(ticks_necessarios))
+    tdf = parser.parse_ticks(["X", "Y", "Z", "yaw", "pitch", "is_alive",
+                              "team_num"],
+                             ticks=ticks_carregar)
     lk = {}
+    sids_demo = set()
     for r in tdf.itertuples(index=False):
+        try:
+            team = int(r.team_num)
+        except (TypeError, ValueError):
+            team = 0
         lk[(int(r.tick), str(r.steamid))] = (
             float(r.X), float(r.Y), float(r.Z),
-            float(r.yaw), float(r.pitch), bool(r.is_alive))
+            float(r.yaw), float(r.pitch), bool(r.is_alive), team)
+        sids_demo.add(str(r.steamid))
 
     # tiros por jogador, ordenados por tick (p/ separar tap preciso de spray);
     # barulho_ticks (L5) inclui granadas — jogar decoy/HE também revela posição
@@ -940,16 +987,145 @@ def analisar_demo(caminho):
                         candidatos_reflexo.append((atacante, mom, a_sid,
                                                    v_sid, t_abre, T))
 
+    # --- D2.3: varredura contínua — troca de mira entre alvos OCULTOS ---
+    # Fora das janelas de kill: a mira gruda em um inimigo invisível e troca
+    # direto para OUTRO inimigo invisível, sem fonte de informação nova e sem
+    # kill no lance. É assinatura de ESP/radar (não de aimbot). Peso 0.
+    candidatos_troca = []
+    if checker and ticks_varredura:
+        kills_de = {}
+        for m in kills_validas:
+            kills_de.setdefault(str(m["attacker_steamid"]), []).append(
+                (int(m["tick"]), str(m["user_steamid"])))
+
+        def vis_par(t, p_sid, e_sid):
+            a = lk.get((t, p_sid))
+            v = lk.get((t, e_sid))
+            if a is None or v is None or not v[5]:
+                return None
+            return checker.is_visible((a[0], a[1], a[2] + 64.0),
+                                      (v[0], v[1], v[2] + 32.0))
+
+        def frac_oculto(p_sid, e_sid, i_ini, i_fim):
+            vis = tot = 0
+            for i in range(i_ini, i_fim + 1, 2):
+                r = vis_par(ticks_varredura[i], p_sid, e_sid)
+                if r is None:
+                    continue
+                tot += 1
+                vis += int(r)
+            return (1.0 - vis / tot) if tot else None
+
+        for p_sid in sorted(sids_demo):
+            if p_sid not in jogadores:
+                continue
+            alvos = []
+            for t in ticks_varredura:
+                a = lk.get((t, p_sid))
+                lock = None
+                if a and a[5] and a[6] in (2, 3):
+                    melhor = NO_ALVO_GRAUS
+                    for e_sid in sids_demo:
+                        if e_sid == p_sid:
+                            continue
+                        v = lk.get((t, e_sid))
+                        if (not (v and v[5]) or v[6] == a[6]
+                                or v[6] not in (2, 3)):
+                            continue
+                        dx, dy = v[0] - a[0], v[1] - a[1]
+                        dz = (v[2] + 32.0) - (a[2] + 64.0)
+                        dxy = math.hypot(dx, dy)
+                        if math.hypot(dx, dy, dz) < TRACK_MIN_DIST or dxy < 1.0:
+                            continue
+                        dyaw = norm180(math.degrees(math.atan2(dy, dx))
+                                       - a[3]) * math.cos(math.radians(a[4]))
+                        dpitch = -math.degrees(math.atan2(dz, dxy)) - a[4]
+                        e = math.hypot(dyaw, dpitch)
+                        if e <= melhor:
+                            melhor = e
+                            lock = e_sid
+                alvos.append(lock)
+
+            for r1, r2 in pares_de_troca(
+                    runs_de_mira(alvos, TROCA_MIN_AMOSTRAS), TROCA_GAP_MAX):
+                alvo_a, alvo_b = r1[0], r2[0]
+                t_troca = ticks_varredura[r2[1]]
+                t_fim2 = ticks_varredura[r2[2]]
+                pa = lk.get((t_troca, p_sid))
+                va = lk.get((t_troca, alvo_a))
+                vb = lk.get((t_troca, alvo_b))
+                if not (pa and va and vb):
+                    continue
+                # troca deliberada: giro material entre os dois alvos
+                y_a = math.degrees(math.atan2(va[1] - pa[1], va[0] - pa[0]))
+                y_b = math.degrees(math.atan2(vb[1] - pa[1], vb[0] - pa[0]))
+                sep = abs(norm180(y_b - y_a))
+                if sep < TROCA_SEP_MIN:
+                    continue
+                # ambos os alvos OCULTOS nas respectivas janelas?
+                oc_a = frac_oculto(p_sid, alvo_a, r1[1], r1[2])
+                oc_b = frac_oculto(p_sid, alvo_b, r2[1], r2[2])
+                if oc_a is None or oc_b is None or oc_a < 0.7 or oc_b < 0.7:
+                    continue
+                # kill em B na sequência já é coberto pela análise por kill
+                if any(t_troca <= tk <= t_fim2 + 128 and vk == alvo_b
+                       for tk, vk in kills_de.get(p_sid, [])):
+                    continue
+                # info legítima sobre o NOVO alvo: barulho e visão recente
+                bar_b = barulho_ticks.get(alvo_b, [])
+                if (bisect.bisect_right(bar_b, t_fim2)
+                        - bisect.bisect_left(bar_b, t_troca - 320)) > 0:
+                    continue
+                if ultima_visao(lambda t: vis_par(t, p_sid, alvo_b),
+                                t_troca, max(1, t_troca - 192),
+                                passo=VARRE_PASSO) is not None:
+                    continue
+                atacante = jogadores[p_sid]
+                nome_a = jogadores.get(alvo_a, {}).get("nome", "?")
+                nome_b = jogadores.get(alvo_b, {}).get("nome", "?")
+                mom = {
+                    "tipo": "TROCA-OCULTA",
+                    "desc": (f"mira saiu do inimigo oculto {nome_a} e travou "
+                             f"direto em {nome_b}, também OCULTO ({sep:.0f}° "
+                             "de giro), sem kill no lance e sem barulho/visão "
+                             "recente do novo alvo — padrão de leitura de "
+                             "radar (em observação, sem peso)"),
+                    "round": max(1, bisect.bisect_right(freeze_ticks, t_troca)),
+                    "tick": t_troca,
+                    "vitima": f"{nome_a} → {nome_b}", "arma": "—", "peso": 0,
+                    "a_sid": p_sid, "v_sid": alvo_b,
+                    "ctx": {
+                        "classe": "ambiguo",
+                        "separacao_deg": sep,
+                        "oclusao_frac": oc_b,
+                        "oclusao_alvo_anterior": oc_a,
+                        "duracao_s": (t_fim2 - t_troca) / 64.0,
+                        "barulho_recente": False,
+                        "viu_antes": False,
+                        "janela_forense_ini": ticks_varredura[r1[1]],
+                        "janela_contexto_ini": max(1, t_troca - 320),
+                        "segundos_no_round": segundos_no_round(
+                            freeze_ticks, t_troca, tickrate),
+                    },
+                    "apos": [round(pa[0]), round(pa[1]), round(pa[2])],
+                    "vpos": [round(vb[0]), round(vb[1]), round(vb[2])],
+                }
+                atacante["momentos"].append(mom)
+                candidatos_troca.append((atacante, mom, p_sid, alvo_b,
+                                         t_troca, t_fim2))
+
     # --- classificação dos trackings: havia parede na linha de visão? ---
     # D1.1: quem via a vítima (radar) nas janelas dos candidatos. Uma única
     # extração de approximate_spotted_by + team_num para os ticks relevantes.
     spot_por, team_por = {}, {}
-    if candidatos_track or candidatos_reflexo:
+    if candidatos_track or candidatos_reflexo or candidatos_troca:
         ticks_spot = set()
         for _, _, _, _, _, s_ini, s_fim in candidatos_track:
             ticks_spot.update(range(s_ini, s_fim + 1, 16))
         for _, _, _, _, t_abre, T_k in candidatos_reflexo:
             ticks_spot.update(range(max(1, t_abre - 320), T_k + 1, 16))
+        for _, _, _, _, t_troca, t_fim2 in candidatos_troca:
+            ticks_spot.update(range(max(1, t_troca - 320), t_fim2 + 1, 16))
         try:
             sdf = parser.parse_ticks(["approximate_spotted_by", "team_num"],
                                      ticks=sorted(ticks_spot))
@@ -1101,6 +1277,23 @@ def analisar_demo(caminho):
         else:
             atacante["reflexos"] += 1
             atacante["vitimas_reflexo"].append(mom["vitima"])
+
+    # --- trocas de alvo oculto: o novo alvo estava no radar do time? ---
+    for atacante, mom, p_sid, b_sid, t_troca, t_fim2 in candidatos_troca:
+        spot_teammate = teammate_spotou(spot_por, team_por, p_sid, b_sid,
+                                        max(1, t_troca - 320), t_fim2)
+        mom["ctx"]["spotted_por_teammate"] = spot_teammate
+        if spot_teammate:
+            mom["ctx"]["classe"] = "descartado"
+            mom["desc"] += (" — mas o novo alvo estava SPOTTED por teammate "
+                            "(info legítima — não anota)")
+            atacante["momentos"] = [x for x in atacante["momentos"]
+                                    if x is not mom]
+            atacante["episodios_descarte"].append(mom)
+        else:
+            atacante["trocas"] += 1
+            atacante["vitimas_troca"].append(
+                jogadores.get(b_sid, {}).get("nome", "?"))
 
     # --- precisão do jogo inteiro ---
     for sid, lst in tiros_ticks.items():
@@ -1346,8 +1539,8 @@ a { color:var(--ink2); }
 
 ICONES = {"FLICK": "⚡", "REAÇÃO": "⏱️", "TRACK": "🧲", "TRACK-PAREDE": "🚨",
           "TRACK-INFO": "🔊", "TRACK-VIU": "👀", "TRACK-RADAR": "📡",
-          "PRE-MIRA": "🎯", "REFLEXO": "🧠", "SMOKE": "💨",
-          "SMOKE-COMUM": "🌫️", "PAREDE": "🧱", "CEGO": "🫣"}
+          "PRE-MIRA": "🎯", "REFLEXO": "🧠", "TROCA-OCULTA": "🔀",
+          "SMOKE": "💨", "SMOKE-COMUM": "🌫️", "PAREDE": "🧱", "CEGO": "🫣"}
 
 
 def svg_radar(radar, momentos):
@@ -1518,6 +1711,7 @@ def gerar_html(jogadores, meta, hist):
       <div><b>{p['tracks']}</b>trackings pré-confronto</div>
       <div><b>{p['premira']}</b>pré-miras em alvo oculto</div>
       <div><b>{p['reflexos']}</b>reflexos pós-LOS</div>
+      <div><b>{p['trocas']}</b>trocas de alvo oculto</div>
       <div><b>{p['smoke']}</b>kills por smoke</div>
       <div><b>{p['wallbang']}</b>wallbangs</div>
     </div>
@@ -1618,6 +1812,13 @@ com seus próprios olhos (a demo pula pra ~5 s antes do lance).</div>
   Um lance isolado pode ser peek advantage ou sorte de prefire — procure
   repetição em vítimas distintas. (Difere do ⏱️: lá mede-se giro+parada da
   mira; aqui, a decisão de atirar após a parede abrir.)</li>
+<li><strong>🔀 Troca de alvo oculto (em observação, SEM peso no score):</strong>
+  fora das janelas de kill, a mira fica ≥0,75 s grudada num inimigo ATRÁS de
+  parede, depois gira (≥{TROCA_SEP_MIN:.0f}°) e trava em OUTRO inimigo também
+  oculto — sem kill, sem barulho, sem visão recente e sem spotted do novo
+  alvo. Seguir um inimigo invisível pode ser leitura de jogo; LARGAR um
+  invisível para achar outro invisível exige saber onde os dois estão. É
+  assinatura de radar/ESP, não de aimbot.</li>
 <li><strong>💨 Kill por smoke:</strong> só pontua se foi tiro PRECISO (≤4 tiros
   em 2 s) a ≥7 m — spammar posição conhecida através da fumaça é jogada normal
   e aparece como 🌫️ sem pontuar. Filtro calibrado com feedback de jogador

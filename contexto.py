@@ -30,8 +30,8 @@ import datetime
 # sempre que a semântica de um campo mudar — o dataset guarda com qual versão
 # cada linha foi gerada.
 SCHEMA_VERSAO = "d0.1"      # formato do registro de episódio (este arquivo)
-VERSAO_FEATURES = "d0.7"    # semântica dos campos de contexto/geometria/mira
-VERSAO_REGRAS = "v6.13"     # versão do detector que emitiu a saída por regra
+VERSAO_FEATURES = "d0.8"    # semântica dos campos de contexto/geometria/mira
+VERSAO_REGRAS = "v6.14"     # versão do detector que emitiu a saída por regra
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
 PASTA_DADOS = os.path.join(PASTA, "dados")
@@ -246,6 +246,10 @@ def montar_episodio(mom, meta):
             ),
             "mudanca_angular_alvo_deg": ctx.get("mudanca_angular_alvo_deg"),
             "distancia_us": ctx.get("distancia_us"),
+            # D2.3 (v6.14): troca entre alvos ocultos — giro entre os alvos e
+            # oclusão do alvo que a mira LARGOU
+            "separacao_deg": ctx.get("separacao_deg"),
+            "oclusao_alvo_anterior": ctx.get("oclusao_alvo_anterior"),
         },
 
         "mira": {
