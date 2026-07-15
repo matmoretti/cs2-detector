@@ -39,6 +39,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from demoparser2 import DemoParser
 
 import contexto  # contrato de episódio forense (Fase D0 / M0)
+import angulos   # mapa de ângulos comuns (baseline persistente por mapa)
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
 ARQ_HISTORICO = os.path.join(PASTA, "historico.json")
@@ -560,6 +561,42 @@ def analisar_demo(caminho):
             float(r.yaw), float(r.pitch), bool(r.is_alive), team)
         sids_demo.add(str(r.steamid))
 
+    # --- mapa de ângulos comuns (D2.3/D3.2/D4.5) ---
+    # Todo ângulo SEGURADO por qualquer jogador do lobby (varredura contínua)
+    # alimenta o baseline persistente do mapa ANTES das consultas — a própria
+    # partida é a primeira referência; demos futuras só enriquecem. Dedup por
+    # hash: reanalisar a mesma demo não infla as contagens.
+    mapa_angulos = angulos.MapaAngulos()
+    if ticks_varredura:
+        runs_ang = angulos.coletar_runs(lk, ticks_varredura, sids_demo)
+        ing = mapa_angulos.ingerir(mapa, demo_hash, runs_ang,
+                                   contexto.pseudonimizar)
+        situacao = (f"+{ing} ângulos segurados" if ing
+                    else "demo já estava no baseline")
+        print(f"  Ângulos comuns ({mapa}): {situacao} · baseline com "
+              f"{mapa_angulos.n_demos(mapa)} demo(s)")
+
+    def anotar_angulo_comum(mom, p_sid, pos, yaw):
+        """Anota quantos OUTROS jogadores do baseline seguram este ângulo.
+
+        Anotação observacional (peso 0): vai para o episódio e pode ir para o
+        desc; nenhum limiar de "comum o suficiente" é decidido aqui (D5).
+        """
+        r = mapa_angulos.consultar(mapa, pos[0], pos[1], pos[2], yaw,
+                                   excluir=contexto.pseudonimizar(p_sid))
+        mom["ctx"]["angulo_comum_jogadores"] = r["jogadores"]
+        mom["ctx"]["angulo_comum_ocorrencias"] = r["ocorrencias"]
+        mom["ctx"]["angulo_comum_demos_baseline"] = r["demos_baseline"]
+        return r
+
+    def txt_angulo_comum(r):
+        if r["jogadores"]:
+            return (f" · ângulo também segurado por {r['jogadores']} outro(s) "
+                    f"jogador(es) no baseline do mapa "
+                    f"({r['demos_baseline']} demo(s))")
+        return (f" · ângulo INÉDITO no baseline do mapa "
+                f"({r['demos_baseline']} demo(s))")
+
     # tiros por jogador, ordenados por tick (p/ separar tap preciso de spray);
     # barulho_ticks (L5) inclui granadas — jogar decoy/HE também revela posição
     fires = parser.parse_event("weapon_fire")
@@ -762,8 +799,11 @@ def analisar_demo(caminho):
                                    "(em observação, sem peso)")
             tiro_txt = ("tiro único" if ctx_w["tiros_2s"] <= 1
                         else f"{ctx_w['tiros_2s']} tiros em 2 s")
-            momento("PAREDE", f"kill através de parede/objeto ({tiro_txt})"
-                              f"{extra_w}", 2, ctx_w)
+            mom_w = momento("PAREDE", f"kill através de parede/objeto "
+                                      f"({tiro_txt}){extra_w}", 2, ctx_w)
+            # D3.2: era lineup/ângulo comum? (anotação no episódio, sem peso)
+            if a_kill:
+                anotar_angulo_comum(mom_w, a_sid, a_kill, a_kill[3])
         if get(m, "attackerblind", False):
             atacante["cego"] += 1
             momento("CEGO", "kill enquanto cego de flashbang", 3)
@@ -1130,6 +1170,11 @@ def analisar_demo(caminho):
                     "apos": [round(pa[0]), round(pa[1]), round(pa[2])],
                     "vpos": [round(vb[0]), round(vb[1]), round(vb[2])],
                 }
+                # D2.3: o ângulo NOVO era comum? (pendência do piso de ruído)
+                am = lk.get((ticks_varredura[(r2[1] + r2[2]) // 2], p_sid))
+                if am:
+                    mom["desc"] += txt_angulo_comum(
+                        anotar_angulo_comum(mom, p_sid, am, am[3]))
                 atacante["momentos"].append(mom)
                 candidatos_troca.append((atacante, mom, p_sid, alvo_b,
                                          t_troca, t_fim2))
@@ -1238,6 +1283,11 @@ def analisar_demo(caminho):
                     "prévia, sem barulho da vítima e sem spotted de teammate. "
                     "Pré-aim de ângulo comum não é descartável: em observação, "
                     "sem peso")
+                # D4.5: o ângulo segurado é comum no baseline do mapa?
+                a_mid = lk.get(((seq_ini + seq_fim) // 2, a_sid))
+                if a_mid:
+                    mom["desc"] += txt_angulo_comum(
+                        anotar_angulo_comum(mom, a_sid, a_mid, a_mid[3]))
                 atacante["momentos"].append(mom)
                 atacante["premira"] += 1
                 atacante["vitimas_premira"].append(mom["vitima"])
@@ -1877,8 +1927,11 @@ com seus próprios olhos (a demo pula pra ~5 s antes do lance).</div>
   inimigo em movimento ATRÁS de parede (≥70% do tempo), sem visão prévia, sem
   barulho da vítima e sem spotted de teammate. É o perfil de ESP "legit": mira
   humana, informação ilegítima — a vantagem aparece ANTES do tiro. Pré-mirar um
-  ângulo comum é jogada normal, então este sinal não pontua: assista aos lances
-  e procure repetição em vítimas e posições DIFERENTES.</li>
+  ângulo comum é jogada normal, então este sinal não pontua — e o card agora diz
+  quantos OUTROS jogadores seguram o mesmo ângulo no baseline do mapa (que
+  cresce a cada demo analisada): ângulo INÉDITO merece mais atenção que um que
+  meio lobby segura. Assista aos lances e procure repetição em vítimas e
+  posições DIFERENTES.</li>
 <li><strong>🧠 Reflexo pós-LOS (em observação, SEM peso no score):</strong> tempo
   entre a linha de visão ABRIR (vindo de trás de parede) e o tiro letal.
   Reação visual humana em jogo fica acima de ~200 ms; tiro em

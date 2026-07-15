@@ -114,9 +114,11 @@ declarado da demo, não como certeza de ausência de call.
   inimigo oculto com giro ≥25°, sem kill, sem barulho/visão recente/spotted
   do novo alvo → anotação 🔀 `TROCA-OCULTA` (peso 0, ambíguo). Baseline
   6 partidas: 21 anotações em 13 jogadores (máx 4x; caso de calibração: 0 —
-  ESP legit não encara paredes, o sinal mira o estilo descarado). Falta:
-  mapa de ângulos comuns para reduzir o piso de ruído e rótulos para
-  calibrar. A varredura é a fundação da linha do tempo de decisões (D4.1).
+  ESP legit não encara paredes, o sinal mira o estilo descarado). **v6.16:**
+  cada troca anota quantos OUTROS jogadores seguram o ângulo novo no mapa de
+  ângulos comuns (na demo de calibração: de 1 a 9 — o piso de ruído virou
+  número). Falta: rótulos para calibrar o limiar de "comum". A varredura é a
+  fundação da linha do tempo de decisões (D4.1).
 
 **Pronto quando:** cada card mostra duração, giro necessário, giro da mira,
 correlação e as exclusões aplicadas. Validar visualmente todos os candidatos
@@ -131,7 +133,8 @@ em primeira pessoa antes de alterar `pontuar()`.
   spam vs tiro único (`tiros_2s`), oclusão pré-kill e `ajuste_oculto_deg`
   (correção da mira no alvo oculto no último ¾ s — no wallbang rotulado
   mediu 1,1° ≈ 4x a cabeça na distância, batendo com o veredito do autor).
-  Falta: lineup/ângulo comum, última posição e nota normalizada por hitbox.
+  **v6.16:** cada PAREDE anota o ângulo comum do lineup (episódio). Falta:
+  última posição e nota normalizada por hitbox.
 - 🔨 D3.3. **v6.12:** `smokegrenade_detonate`/`expired` são confiáveis
   (duração real medida: ~22,1 s); registro de smokes ativas por partida e,
   em cada smoke kill, a idade da nuvem, o tempo restante e a distância do
@@ -177,8 +180,12 @@ esperar flick, lock ou tracking perfeito para encontrar candidatos.
   **1ª revisão do autor: 2 dos 3 confirmados** (contexto; reflexo pós-LOS)
   **e 1 refutado** (abertura de round — falso positivo documentado); exclusão
   por timing foi calibrada e REFUTADA antes de virar regra (v6.8). Reação
-  pós-LOS: ✅ v6.9 (anotação 🧠 REFLEXO). Falta: mapa de ângulos comuns e
-  escada por vítimas distintas.
+  pós-LOS: ✅ v6.9 (anotação 🧠 REFLEXO). **v6.16:** mapa de ângulos comuns
+  anotado em cada PRE-MIRA — e o primeiro dado REFUTA o ângulo como
+  discriminador deste estilo: as 3 PRE-MIRAs do caso de calibração são em
+  ângulos que 5–6 outros jogadores do lobby também seguram (ESP legit
+  pré-mira o ângulo COMUM na hora certa; o discriminador segue sendo o
+  timing/reflexo). Falta: escada por vítimas distintas.
 - ⏳ D4.6. Reunir decisões de **prefire, wallbang e utility seletivos**: não
   apenas acertar alguém, mas escolher posição incomum/ocupada sem spam,
   lineup, visão recente ou outro sinal. D3 produz a evidência micro; aqui ela
@@ -286,6 +293,17 @@ comparação antes/depois e justificativa em `APRENDIZADOS.md`.
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-15 · v6.16 (mapa de ângulos comuns — pendência de D2.3/D3.2/D4.5):
+  todo ângulo SEGURADO ≥0,75 s por qualquer jogador (varredura contínua) vira
+  baseline persistente por mapa (`dados/angulos_comuns.json`; célula 128 u +
+  setor de yaw 15°; dedup por demo; jogadores pseudonimizados). PRE-MIRA,
+  TROCA-OCULTA e PAREDE anotam quantos OUTROS jogadores seguram o mesmo
+  ângulo (peso 0). Primeiro dado real (dust2): as 3 PRE-MIRAs do caso de
+  calibração são em ângulos COMUNS (5–6 outros) — o ângulo não discrimina o
+  ESP legit, confirma que o discriminador é o timing; TROCA-OCULTA variou de
+  1 a 9 (instrumento do piso de ruído). Score inalterado; features d0.9;
+  +13 testes (106).
 
 - 2026-07-15 · v6.15 (D0.2 ✅ + assinatura da mira): painel "Descartes e
   controles" no card (decisões revisáveis sem reler código) e assinatura da

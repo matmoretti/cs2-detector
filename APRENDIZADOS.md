@@ -167,6 +167,20 @@ fica desnecessário para aquele padrão.
   contra o estilo que ele detecta. Piso de ruído atual: ~3,5 trocas/partida
   espalhadas (máx 4x num jogador) — ângulos comuns explicam; o mapa de
   ângulos (pendente) é o caminho para reduzir.
+- **Mapa de ângulos comuns (v6.16) — e o que o 1º dado já refutou:** todo
+  ângulo segurado ≥0,75 s por qualquer jogador da varredura contínua vira
+  baseline persistente por mapa (`dados/angulos_comuns.json`, célula 128 u +
+  setor de yaw 15°, dedup por hash da demo, jogadores pseudonimizados).
+  PRE-MIRA, TROCA-OCULTA e PAREDE anotam quantos OUTROS jogadores seguram o
+  mesmo ângulo. **Dado real (dust2, baseline de 1 demo):** as 3 PRE-MIRAs do
+  caso de calibração estão em ângulos que 5–6 outros jogadores do lobby também
+  seguram — "ângulo inédito" NÃO é discriminador do ESP legit (ele pré-mira o
+  ângulo comum na HORA certa; o discriminador segue sendo timing/REFLEXO). O
+  instrumento serve é para o piso de ruído do estilo descarado: as
+  TROCA-OCULTA da mesma demo variaram de 1 a 9 outros jogadores. Limiar de
+  "comum o suficiente" é calibração com rótulos (D5), nunca regra a priori.
+  Aproximações declaradas: pitch ignorado, célula/setor discretos, run longa
+  conta 1 ocorrência.
 - **Pré-mira parada em alvo oculto (ESP "legit"):** o descarte L3 (giro <12°,
   anti aim-assist) escondia o perfil que NÃO gira a mira porque já pré-mira
   certo — a vantagem do ESP legit aparece ANTES do tiro. **Status: codificado

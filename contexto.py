@@ -30,8 +30,8 @@ import datetime
 # sempre que a semântica de um campo mudar — o dataset guarda com qual versão
 # cada linha foi gerada.
 SCHEMA_VERSAO = "d0.1"      # formato do registro de episódio (este arquivo)
-VERSAO_FEATURES = "d0.8"    # semântica dos campos de contexto/geometria/mira
-VERSAO_REGRAS = "v6.14"     # versão do detector que emitiu a saída por regra
+VERSAO_FEATURES = "d0.9"    # semântica dos campos de contexto/geometria/mira
+VERSAO_REGRAS = "v6.16"     # versão do detector que emitiu a saída por regra
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
 PASTA_DADOS = os.path.join(PASTA, "dados")
@@ -269,6 +269,13 @@ def montar_episodio(mom, meta):
             "erro_min_deg": ctx.get("erro_min_deg"),
             "erro_no_disparo_deg": ctx.get("erro_no_disparo_deg"),
             "dt_disparo_erro_min_ms": ctx.get("dt_disparo_erro_min_ms"),
+            # v6.16: mapa de ângulos comuns (D2.3/D3.2/D4.5) — quantos OUTROS
+            # jogadores seguram o mesmo ângulo (célula 128 u + setor de 15°)
+            # no baseline persistente do mapa, e com quantas demos ele conta
+            "angulo_comum_jogadores": ctx.get("angulo_comum_jogadores"),
+            "angulo_comum_ocorrencias": ctx.get("angulo_comum_ocorrencias"),
+            "angulo_comum_demos_baseline": ctx.get(
+                "angulo_comum_demos_baseline"),
         },
 
         # Contraprovas: informação legítima que poderia explicar a suspeita.
