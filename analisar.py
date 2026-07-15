@@ -40,6 +40,7 @@ from demoparser2 import DemoParser
 
 import contexto  # contrato de episódio forense (Fase D0 / M0)
 import angulos   # mapa de ângulos comuns (baseline persistente por mapa)
+import decisoes  # linha do tempo de decisões (D4.1 — registro, peso 0)
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
 ARQ_HISTORICO = os.path.join(PASTA, "historico.json")
@@ -1459,6 +1460,147 @@ def analisar_demo(caminho):
         novos, ign = contexto.salvar_episodios(episodios)
         print(f"  Episódios forenses: +{novos} novos, {ign} já existiam "
               f"→ dados/episodios.jsonl")
+
+    # --- D4.1: linha do tempo de decisões (registro puro, peso 0) ---
+    # Reversões de rota, avanços após parada longa e utility de TODOS os
+    # jogadores, cada decisão com a informação observável (visão/barulho/
+    # spotted) e a posição REAL dos inimigos no instante. É a matéria-prima
+    # de D4.2-D4.4; nada aqui pontua ou aparece no relatório.
+    if ticks_varredura and demo_hash not in decisoes.demos_registradas():
+        GRANADAS = {"hegrenade", "flashbang", "smokegrenade", "molotov",
+                    "incgrenade", "decoy"}
+        granadas = {}
+        for _, f in fires.iterrows():
+            sid_g = get(f, "user_steamid", None)
+            arma_g = str(get(f, "weapon", "")).replace("weapon_", "")
+            if sid_g is not None and arma_g in GRANADAS:
+                granadas.setdefault(str(sid_g), []).append(
+                    (int(f["tick"]), arma_g))
+
+        t0_var = ticks_varredura[0]
+
+        def snap(t):
+            i = round((t - t0_var) / VARRE_PASSO)
+            return ticks_varredura[max(0, min(len(ticks_varredura) - 1, i))]
+
+        # eventos = (sid, tick, tipo, extra)
+        eventos = []
+        passo_s = VARRE_PASSO / float(tickrate)
+        for p_sid in sorted(sids_demo):
+            seg = []
+            segs = []
+            for t in ticks_varredura:
+                p = lk.get((t, p_sid))
+                if p and p[5] and p[6] in (2, 3):
+                    seg.append((t, p[0], p[1], p[2]))
+                elif seg:
+                    segs.append(seg)
+                    seg = []
+            if seg:
+                segs.append(seg)
+            for seg in segs:
+                for t, giro, h_a, h_d in decisoes.detectar_reversoes(
+                        seg, passo_s):
+                    eventos.append((p_sid, t, "reversao",
+                                    {"giro_deg": round(giro, 1),
+                                     "heading_antes_deg": round(h_a, 1),
+                                     "heading_depois_deg": round(h_d, 1)}))
+                for t, par_s, h in decisoes.detectar_avancos(seg, passo_s):
+                    eventos.append((p_sid, t, "avanco_apos_parada",
+                                    {"parado_s": round(par_s, 2),
+                                     "heading_saida_deg":
+                                         round(h, 1) if h is not None
+                                         else None}))
+            for t, arma_g in granadas.get(p_sid, []):
+                eventos.append((p_sid, t, "utility", {"granada": arma_g}))
+
+        # spotted no instante de cada decisão (fonte nativa; falha vira None)
+        spot_dec = None
+        if eventos:
+            try:
+                sdf = parser.parse_ticks(
+                    ["approximate_spotted_by"],
+                    ticks=sorted({snap(t) for _, t, _, _ in eventos}))
+                spot_dec = {}
+                for r in sdf.itertuples(index=False):
+                    spot_dec[(int(r.tick), str(r.steamid))] = [
+                        str(x) for x in (r.approximate_spotted_by or [])]
+            except Exception as e:
+                print(f"  (spotted indisponível p/ decisões: {e})")
+
+        registros = []
+        for p_sid, T_d, tipo_d, extra in eventos:
+            Ts = snap(T_d)
+            if abs(Ts - T_d) > VARRE_PASSO:
+                continue  # fora da janela carregada (snap distorceria a posição)
+            a = lk.get((Ts, p_sid))
+            if not (a and a[5]):
+                continue
+            olho = (a[0], a[1], a[2] + 64.0)
+            inimigos = []
+            for e_sid in sorted(sids_demo):
+                v = lk.get((Ts, e_sid))
+                if (e_sid == p_sid or not (v and v[5])
+                        or v[6] == a[6] or v[6] not in (2, 3)):
+                    continue
+                vis_agora = vis_2s = None
+                if checker:
+                    vis_agora = checker.is_visible(
+                        olho, (v[0], v[1], v[2] + 32.0))
+                    vis_2s = vis_agora
+                    if not vis_2s:
+                        for dt in (32, 64, 96, 128):
+                            aa = lk.get((Ts - dt, p_sid))
+                            vv = lk.get((Ts - dt, e_sid))
+                            if (aa and vv and vv[5] and checker.is_visible(
+                                    (aa[0], aa[1], aa[2] + 64.0),
+                                    (vv[0], vv[1], vv[2] + 32.0))):
+                                vis_2s = True
+                                break
+                bar = barulho_ticks.get(e_sid, [])
+                barulho5s = (bisect.bisect_right(bar, Ts)
+                             - bisect.bisect_left(bar, Ts - 320)) > 0
+                spotted = None
+                if spot_dec is not None:
+                    spotted = any(
+                        (lk.get((Ts, s)) or (0, 0, 0, 0, 0, False, 0))[6]
+                        == a[6]
+                        for s in spot_dec.get((Ts, e_sid), []))
+                inimigos.append({
+                    "id": contexto.pseudonimizar(e_sid),
+                    "pos": [round(v[0]), round(v[1]), round(v[2])],
+                    "dist_us": round(math.hypot(
+                        v[0] - a[0], v[1] - a[1], v[2] - a[2])),
+                    "visivel_agora": vis_agora,
+                    "visto_ult_2s": vis_2s,
+                    "barulho_ult_5s": barulho5s,
+                    "spotted_pelo_time": spotted,
+                })
+            registros.append({
+                "schema": decisoes.SCHEMA_DECISAO,
+                "demo_hash": demo_hash,
+                "demo_arquivo": os.path.basename(caminho),
+                "mapa": mapa, "tick": Ts,
+                "round": max(1, bisect.bisect_right(freeze_ticks, Ts)),
+                "segundos_no_round": segundos_no_round(
+                    freeze_ticks, Ts, tickrate),
+                "jogador_id": contexto.pseudonimizar(p_sid),
+                "time": a[6], "tipo": tipo_d,
+                "pos": [round(a[0]), round(a[1]), round(a[2])],
+                **extra,
+                "inimigos": inimigos,
+                "geometria": checker is not None,
+                "versoes": {"regras": contexto.VERSAO_REGRAS,
+                            "parser": versao_parser},
+            })
+        if registros:
+            n_dec = decisoes.salvar_decisoes(registros)
+            tipos = {}
+            for r in registros:
+                tipos[r["tipo"]] = tipos.get(r["tipo"], 0) + 1
+            print(f"  Linha do tempo (D4.1): +{n_dec} decisões "
+                  f"({', '.join(f'{v} {k}' for k, v in sorted(tipos.items()))})"
+                  f" → dados/decisoes.jsonl")
 
     return jogadores, {"mapa": mapa, "rounds": total_rounds,
                        "arquivo": os.path.basename(caminho),

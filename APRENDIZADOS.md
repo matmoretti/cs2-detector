@@ -104,6 +104,16 @@ fica desnecessário para aquele padrão.
 
 ## Pendentes (descobertos, ainda não codificados)
 
+- **Linha do tempo de decisões (v6.18, D4.1) — base de taxa antes de
+  qualquer sinal:** na demo de calibração, 604 de 1641 decisões (37%) não
+  têm NENHUMA fonte observável sobre nenhum inimigo — decidir "às cegas" é
+  o estado normal do jogo, não indício. Qualquer sinal futuro de D4.3/D4.4
+  (informação negativa, janela segura) precisa ser medido contra esse
+  denominador por jogador, nunca por lance isolado. O que falta na linha do
+  tempo: entrada/abandono de bombsite, save e escolha de duelo (dependem de
+  estado de round/economia); sincronia decisão↔mudança oculta do inimigo
+  (D4.4) ainda não é medida — só registrada a matéria-prima.
+
 - **Versionamento do dataset de episódios:** o `episode_id` inclui a categoria
   do lance e o dedup é por id — reprocessar a MESMA demo com uma versão de
   regras diferente NÃO regrava o episódio (fica a versão antiga) a menos que a

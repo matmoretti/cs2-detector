@@ -159,10 +159,17 @@ overshoot, reação normal e mortes ruins. A vantagem aparece antes do tiro:
 saber qual ângulo, rota e momento são seguros. Portanto, esta etapa não deve
 esperar flick, lock ou tracking perfeito para encontrar candidatos.
 
-- ⏳ D4.1. Registrar uma linha do tempo de decisões: rotações, avanço/recuo,
+- 🔨 D4.1. Registrar uma linha do tempo de decisões: rotações, avanço/recuo,
   entrada/abandono de bombsite, save, escolha de duelo e uso de utility.
   Para cada decisão, guardar a informação observável e a posição real dos
-  inimigos naquele instante.
+  inimigos naquele instante. **v6.18:** `decisoes.py` + `dados/decisoes.jsonl`
+  — reversões de rota (heading do movimento vira ≥120°), avanços após parada
+  ≥3 s e granadas, de TODOS os jogadores, cada decisão com visão/barulho/
+  spotted E posição real de cada inimigo. Demo de calibração: 1641 decisões
+  (10 jogadores, 117–196 cada), 604 sem NENHUMA fonte observável — o
+  denominador honesto que D4.3/D4.4 precisam (decisão às cegas é o normal
+  do jogo; o padrão suspeito é acertar sempre). Falta: entrada/abandono de
+  bombsite, save e escolha de duelo (precisam de estado de round/economia).
 - ⏳ D4.2. Medir **cobertura seletiva de ângulos**: quais setores perigosos o
   jogador checou, por quanto tempo e quais estavam ocupados/vazios. Procurar
   a assimetria "checa o ocupado, ignora o vazio" em muitas situações, sem
@@ -297,6 +304,15 @@ comparação antes/depois e justificativa em `APRENDIZADOS.md`.
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-15 · v6.18 (D4.1 🔨): linha do tempo de decisões — primeira
+  infraestrutura da fase D4 (ESP sem aim assist). Novo `decisoes.py` e
+  `dados/decisoes.jsonl`: reversões de rota, avanços após parada longa e
+  utility de todos os jogadores, cada decisão com a informação observável
+  (visível agora/últimos 2 s, barulho 5 s, spotted pelo time) e a posição
+  REAL de cada inimigo. Registro puro: peso 0, nada no relatório. Demo de
+  calibração: 1641 decisões / 10 jogadores (604 sem fonte observável — o
+  denominador de base para D4.3/D4.4). +12 testes (125).
 
 - 2026-07-15 · v6.17 (D2.2 ✅): estado descritivo da janela de mira
   (`estado_mira` no episódio): parada_angulo_comum/raro/sem_baseline,
