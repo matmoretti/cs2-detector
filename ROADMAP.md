@@ -37,6 +37,198 @@ Legenda: ✅ feito · 🔨 em andamento · ⏳ pendente · 🧱 bloqueado
 - ✅ C3. Mini-mapa no card: linha atacante→vítima, cor por gravidade, tooltip
   com round/vítima, suporte a mapas de 2 andares (Nuke/Vertigo/Train)
 
+## Fase D — Evidência de ESP/wallhack por informação ilegítima 🔨
+
+**Objetivo:** detectar padrões em que a decisão ou a mira acompanha a posição
+real de um inimigo que o jogador não deveria conhecer. Um evento isolado nunca
+é veredito: cada sinal novo nasce como anotação, é calibrado em demos rotuladas
+e só então pode ganhar peso no score.
+
+### D0. Contrato de evidência e baseline ⏳
+
+- ⏳ D0.1. Criar uma estrutura única de `contexto_info` por lance/janela:
+  linha de visão atual e recente, último tick visto, barulho/utility da vítima,
+  smoke, distância, geometria e explicações que descartam a suspeita.
+- ⏳ D0.2. Registrar no relatório tanto os candidatos quanto os descartes
+  (`TRACK-VIU`, `TRACK-INFO`, etc.), com o motivo. O relatório deve permitir
+  revisar a decisão sem reler o código.
+- ⏳ D0.3. Montar um conjunto de calibração com lances legítimos conhecidos,
+  lances posteriormente associados a ban e lances ambíguos. Guardar o veredito
+  humano e o `demo_gototick`, nunca somente um rótulo por jogador.
+
+**Pronto quando:** todo sinal futuro recebe contexto e uma justificativa de
+inclusão/exclusão reproduzível; nenhum limiar é escolhido somente por intuição.
+
+### D1. Modelo de informação legítima ⏳
+
+- ⏳ D1.1. Pesquisar no `demoparser2` e em demos reais campos de *spotted*/
+  radar por teammate. Se forem confiáveis, incorporar como exclusão; se não
+  forem extraíveis, marcar a incerteza explicitamente no relatório.
+- ⏳ D1.2. Trocar a regra binária de barulho por contexto de audibilidade:
+  tipo do evento, distância, tempo decorrido, movimento e oclusão quando a
+  demo permitir. Começar como anotação, sem reduzir/aumentar score.
+- ⏳ D1.3. Generalizar "última posição conhecida": medir a última linha de
+  visão direta do próprio jogador e a idade dessa informação, em vez de uma
+  janela fixa universal.
+
+**Pronto quando:** cada candidato de ESP responde: "que informação legítima
+existia, para quem, e há quanto tempo?". Voz/discord continuam como limite
+declarado da demo, não como certeza de ausência de call.
+
+### D2. Correlação de mira com alvo oculto ⏳
+
+- ⏳ D2.1. Para janelas com parede/smoke, calcular as séries de variação da
+  direção atacante→alvo e da mira; medir correlação, defasagem, duração e
+  amplitude angular. Exigir alvo em movimento e mudança angular material.
+- ⏳ D2.2. Separar três estados: mira parada em ângulo comum (não é tracking),
+  pré-aim plausível/ambíguo (anotação) e mira que acompanha o alvo oculto
+  (candidato forte).
+- ⏳ D2.3. Detectar troca sequencial entre alvos ocultos: a mira deixa de
+  seguir um inimigo não visível e passa a acompanhar outro, sem fonte de
+  informação nova. Este é um sinal de ESP/radar, não de aimbot.
+
+**Pronto quando:** cada card mostra duração, giro necessário, giro da mira,
+correlação e as exclusões aplicadas. Validar visualmente todos os candidatos
+em primeira pessoa antes de alterar `pontuar()`.
+
+### D3. Smoke, prefire e timing de gatilho ⏳
+
+- ⏳ D3.1. Evoluir "GATILHO CIRÚRGICO" para uma série temporal do erro angular
+  mira→alvo, velocidade do alvo e instante do disparo. Manter observacional
+  até haver baseline de partidas suficientes.
+- ⏳ D3.2. Classificar prefire/wallbang em: lineup/ângulo comum, tiro por
+  última posição, spam e tiro seletivo na posição real desconhecida.
+- ⏳ D3.3. Investigar dados de granadas de smoke (posição, duração e volume),
+  pois o evento `thrusmoke` só descreve o resultado da kill, não todo o
+  contexto visual do lance.
+
+**Pronto quando:** kills por smoke e prefire só são candidatas após passarem
+pelo modelo de informação legítima da D1; nenhum recebe peso por ocorrer uma
+única vez.
+
+### D4. ESP sem assistência de mira: decisões e informação negativa ⏳
+
+**Premissa:** um ESP "legit" pode preservar mira inteiramente humana — erro,
+overshoot, reação normal e mortes ruins. A vantagem aparece antes do tiro:
+saber qual ângulo, rota e momento são seguros. Portanto, esta etapa não deve
+esperar flick, lock ou tracking perfeito para encontrar candidatos.
+
+- ⏳ D4.1. Registrar uma linha do tempo de decisões: rotações, avanço/recuo,
+  entrada/abandono de bombsite, save, escolha de duelo e uso de utility.
+  Para cada decisão, guardar a informação observável e a posição real dos
+  inimigos naquele instante.
+- ⏳ D4.2. Medir **cobertura seletiva de ângulos**: quais setores perigosos o
+  jogador checou, por quanto tempo e quais estavam ocupados/vazios. Procurar
+  a assimetria "checa o ocupado, ignora o vazio" em muitas situações, sem
+  confundir uma limpeza rápida com ângulo ignorado.
+- ⏳ D4.3. Marcar **informação negativa** como observação: avanço solo por
+  área realmente limpa, entrada sem flash, passagem por smoke ou abandono de
+  ameaça quando ela de fato não existe. Ação que deu certo não basta; exigir
+  ausência de fonte de informação e repetição em cenários independentes.
+- ⏳ D4.4. Detectar **janelas seguras invisíveis**: o jogador espera para
+  avançar exatamente quando o defensor oculto sai, vira, troca de posição ou
+  rotaciona. Medir a defasagem entre a mudança do alvo e a mudança de plano.
+- ⏳ D4.5. Detectar **pré-mira humana, porém informada**: crosshair se aproxima
+  da posição real oculta, mas a correção final e o tiro continuam manuais.
+  Diferenciar isto de pre-aim de canto comum com mapas de ângulos e de última
+  posição conhecida.
+- ⏳ D4.6. Reunir decisões de **prefire, wallbang e utility seletivos**: não
+  apenas acertar alguém, mas escolher posição incomum/ocupada sem spam,
+  lineup, visão recente ou outro sinal. D3 produz a evidência micro; aqui ela
+  entra na sequência de decisão do round.
+- ⏳ D4.7. Medir **seleção de risco/duelo**: evitar repetidamente o lado com
+  vários inimigos e convergir para o isolado, ou chegar por trás sem qualquer
+  informação de equipe. Tratar como corroborador fraco, pois leitura de jogo
+  e calls podem explicar o evento.
+- ⏳ D4.8. Comparar a decisão tomada com alternativas plausíveis do mesmo
+  round e registrar explicitamente as contraprovas: visão recente, som,
+  granada, radar/*spotted*, teammate e timing padrão. Voz/Discord continuam
+  como incerteza declarada, não como prova de ausência de call.
+- ⏳ D4.9. Agregar somente por padrões que se repetem em rounds, vítimas e
+  partidas distintas. Decisões de D4 nunca recebem score sozinhas: elas
+  corroboram sinais de D2/D3 ou entram primeiro como perfil observacional.
+- ⏳ D4.10. Criar um detector observacional de **clutch sem medo**: em 1vX,
+  registrar limpeza seletiva das ameaças reais, atravessar smoke sem suporte,
+  abandono de ângulos perigosos vazios e avanço sem flash/backup. É um caso
+  especial de informação negativa e só pode corroborar outros sinais, pois
+  clutch tem forte componente de leitura, timing e call de teammate.
+
+#### Matriz de cobertura: comportamentos de ESP sem aim assist
+
+Todos os itens abaixo entram no roadmap mesmo quando a identificação ainda não
+está clara. Enquanto não houver métrica e contraprovas confiáveis, o estado é
+**exploratório/observacional** e o peso deve permanecer zero.
+
+| Comportamento | Item do roadmap | Estado inicial |
+|---|---|---|
+| Seleção perfeita de ângulos | D4.2 — cobertura seletiva de ângulos | Observacional |
+| Rota “segura” sem informação | D4.3 — informação negativa | Observacional |
+| Timing de janela segura | D4.4 — janelas seguras invisíveis | Candidato forte, `peso=0` |
+| Pré-mira discreta | D4.5 — pré-mira humana, porém informada | Observacional |
+| Prefire seletivo | D3.2 + D4.6 — classificação e sequência de decisão | Candidato forte, `peso=0` |
+| Utilitário informado | D4.1 + D4.6 — utility e escolha de posição | Observacional |
+| Clutch “sem medo” | D4.10 — detector específico de clutch | Exploratório, corroborador |
+| Rotação que acompanha o inimigo | D4.1 + D4.4 — linha do tempo e sincronia com rotação oculta | Observacional |
+| Escolha de duelo | D4.7 — seleção de risco/duelo | Exploratório, corroborador |
+| Ação em resposta a mudança invisível | D4.4 — defasagem alvo→decisão | Candidato forte, `peso=0` |
+
+**Pronto quando:** o relatório explica a cadeia "informação disponível →
+decisão tomada → posição real", mostra o que o jogador deixou de checar e
+declara as incertezas. Uma mira humana não exculpa nem condena; o foco é a
+sincronia recorrente entre decisão e informação oculta.
+
+### D5. Calibração, score e regressão ⏳
+
+- ⏳ D5.1. Antes de pontuar um sinal, publicar no relatório a versão
+  observacional por várias demos, incluindo falsos positivos confirmados.
+- ⏳ D5.2. Calibrar por vítimas distintas, partidas distintas e, quando
+  possível, mapas distintos; não deixar um único duelo previsível inflar o
+  score.
+- ⏳ D5.3. Só promover um sinal para `pontuar()` se ele acrescentar evidência
+  independente, tiver contraprovas codificadas e sobreviver à revisão
+  adversarial de todos os lances marcados.
+- ⏳ D5.4. Adicionar testes de regressão com ticks/lances mínimos que cubram:
+  ângulo segurado, última visão, barulho/utility, smoke spam, alvo parado,
+  wall-track real, troca de alvo oculto, ângulo vazio ignorado, ângulo ocupado
+  checado, rota segura por informação legítima e rota aparentemente segura sem
+  informação observável.
+
+**Pronto quando:** uma mudança de peso é acompanhada por casos de teste,
+comparação antes/depois e justificativa em `APRENDIZADOS.md`.
+
+### Roteiro para agentes de implementação
+
+1. Ler `APRENDIZADOS.md`, esta fase e as funções `analisar_demo()` e
+   `pontuar()` antes de editar. Confirmar quais dados a demo realmente expõe;
+   não assumir que voz, áudio percebido ou radar estão disponíveis.
+2. Implementar primeiro a extração e a anotação no relatório; manter
+   `peso=0`. Inspecionar lances em primeira pessoa pelo `demo_gototick`.
+3. Para cada candidato, registrar dados brutos, exclusões aplicadas e uma
+   explicação curta. Se a explicação legítima não puder ser descartada, usar
+   estado ambíguo, não "suspeito".
+4. Validar contra os casos de regressão e demos completas. Só depois propor
+   limiar, escada por vítimas distintas e peso — todos revisáveis em diff.
+5. Atualizar `APRENDIZADOS.md` com o falso positivo ou a nova regra antes de
+   encerrar. O resultado esperado é menos acusações erradas, não mais flags.
+
+### Referências de pesquisa
+
+- Estudo de comportamento de wallhack: frequência e continuidade de traços
+  ilegítimos, com período de graça após visão legítima —
+  [A Novel Approach to the Detection of Cheating in Online Games](https://research.tees.ac.uk/ws/files/6438470/111786.pdf).
+- Dataset e modelo recente para CS2; recomenda agregar várias kills, já que
+  lances individuais são ambíguos —
+  [AntiCheatPT / CS2CD](https://arxiv.org/abs/2508.06348).
+- Checklist comunitário de revisão de demo: pre-aim, tracking multi-alvo e
+  smoke como sinais, mas com contexto obrigatório —
+  [CSWatch](https://cswatch.gg/blog/reading-a-cs2-demo-checklist-cheat-detection).
+- Pesquisa sobre *visual hack*/ESP como categoria distinta de assistência de
+  mira — [Robust Vision-Based Cheat Detection](https://cdn.buttercms.com/iPaw9YUQBGIdZOB3OUT4).
+- Relato comunitário útil para a hipótese de radar ESP: mesmo posição atrasada
+  pode criar vantagem de rota e de leitura macro; usar apenas como contexto,
+  não como evidência de que toda demo/partida seja afetada —
+  [discussão no r/cs2](https://www.reddit.com/r/cs2/comments/1pe0bc6/radar_hack_with_your_own_demo_continuation/).
+
 ## Backlog (sem ordem)
 
 - ⏳ Assinatura da mira: variância do tempo de reação (triggerbot), suavidade
@@ -46,6 +238,12 @@ Legenda: ✅ feito · 🔨 em andamento · ⏳ pendente · 🧱 bloqueado
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-14 · v6.4: forense de correlação de mira validada em caso real
+  (7 lances: zero tracking por raio-x — wallhack de tracking descartado;
+  restou perfil de ESP de posição, indistinguível de game sense por lance
+  isolado). Nova anotação 💨 "GATILHO CIRÚRGICO" (alvo ≥150 u/s cruzando
+  smoke com mira parada ≤3°/s) — em observação, sem peso no score ainda.
 
 - 2026-07-14 · v1: estatísticas de eventos (HS%, smoke, wallbang, cego)
 - 2026-07-14 · v5: análise de mira tick a tick (flick, reação, tracking),

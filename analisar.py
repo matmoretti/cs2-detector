@@ -335,8 +335,24 @@ def analisar_demo(caminho):
             if dist_m >= 7.0 and n_tiros <= 4:
                 atacante["smoke"] += 1
                 atacante["vitimas_smoke"].append(v_nome)
+                # timing de gatilho: acertar alvo RÁPIDO cruzando a smoke com a
+                # mira parada exige disparar a ±40 ms do cruzamento — repetido,
+                # sugere ESP de posição (anotação sem peso no score, em validação)
+                extra, peso_s = "", 3
+                v8 = lk.get((T - 8, v_sid))
+                a64 = lk.get((T - 64, a_sid))
+                if v_kill and v8 and a_kill and a64:
+                    vel_v = math.hypot(v_kill[0] - v8[0],
+                                       v_kill[1] - v8[1]) / (8 / 64.0)
+                    giro = giro_mira(a64[3], a64[4], a_kill[3], a_kill[4])
+                    if vel_v >= 150 and giro <= 3.0:
+                        extra = (f" — GATILHO CIRÚRGICO: alvo cruzando a "
+                                 f"{vel_v:.0f} u/s com a mira parada "
+                                 f"(giro de {giro:.1f}° no último segundo)")
+                        peso_s = 4
                 momento("SMOKE", f"kill através de smoke a {dist_m:.0f} m com "
-                                 f"tiro preciso ({n_tiros} tiro(s) em 2 s)", 3)
+                                 f"tiro preciso ({n_tiros} tiro(s) em 2 s)"
+                                 f"{extra}", peso_s)
             else:
                 motivo = ("briga dentro/perto da smoke"
                           if dist_m < 7.0 else f"spray de {n_tiros} tiros")
