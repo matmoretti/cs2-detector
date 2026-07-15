@@ -1,0 +1,12 @@
+# Dados pessoais e de terceiros — NUNCA versionar
+config.json
+historico.json
+relatorio*.html
+
+# Demos e assets de mapa (baixe com o jogo / awpy get maps)
+*.dem
+maps/
+
+# Python
+__pycache__/
+*.pyc

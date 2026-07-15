@@ -1,0 +1,3 @@
+demoparser2>=0.34
+pandas>=2.0
+awpy>=2.0
