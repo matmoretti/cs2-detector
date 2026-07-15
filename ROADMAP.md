@@ -141,10 +141,15 @@ esperar flick, lock ou tracking perfeito para encontrar candidatos.
 - ⏳ D4.4. Detectar **janelas seguras invisíveis**: o jogador espera para
   avançar exatamente quando o defensor oculto sai, vira, troca de posição ou
   rotaciona. Medir a defasagem entre a mudança do alvo e a mudança de plano.
-- ⏳ D4.5. Detectar **pré-mira humana, porém informada**: crosshair se aproxima
+- 🔨 D4.5. Detectar **pré-mira humana, porém informada**: crosshair se aproxima
   da posição real oculta, mas a correção final e o tiro continuam manuais.
   Diferenciar isto de pre-aim de canto comum com mapas de ângulos e de última
-  posição conhecida.
+  posição conhecida. **v6.7:** anotação 🎯 `PRE-MIRA` (peso 0, classe ambíguo):
+  mira parada (giro <12°) sobre alvo em movimento OCULTO ≥70%, sem visão
+  prévia, barulho ou spotted. Baseline em 6 partidas: 1x/jogador é ruído
+  normal; só o caso de calibração do autor repetiu (3x, vítimas distintas).
+  Falta: mapa de ângulos comuns e escada por vítimas distintas (após revisão
+  em primeira pessoa).
 - ⏳ D4.6. Reunir decisões de **prefire, wallbang e utility seletivos**: não
   apenas acertar alguém, mas escolher posição incomum/ocupada sem spam,
   lineup, visão recente ou outro sinal. D3 produz a evidência micro; aqui ela
@@ -177,7 +182,7 @@ está clara. Enquanto não houver métrica e contraprovas confiáveis, o estado 
 | Seleção perfeita de ângulos | D4.2 — cobertura seletiva de ângulos | Observacional |
 | Rota “segura” sem informação | D4.3 — informação negativa | Observacional |
 | Timing de janela segura | D4.4 — janelas seguras invisíveis | Candidato forte, `peso=0` |
-| Pré-mira discreta | D4.5 — pré-mira humana, porém informada | Observacional |
+| Pré-mira discreta | D4.5 — pré-mira humana, porém informada | Anotação 🎯 sem peso (v6.7) |
 | Prefire seletivo | D3.2 + D4.6 — classificação e sequência de decisão | Candidato forte, `peso=0` |
 | Utilitário informado | D4.1 + D4.6 — utility e escolha de posição | Observacional |
 | Clutch “sem medo” | D4.10 — detector específico de clutch | Exploratório, corroborador |
@@ -251,6 +256,16 @@ comparação antes/depois e justificativa em `APRENDIZADOS.md`.
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-15 · v6.7 (D4.5): anotação 🎯 PRE-MIRA — o primeiro sinal desenhado
+  para ESP "legit" (mira humana, informação ilegítima). O descarte de giro
+  <12° (L3, anti aim-assist) escondia quem NÃO gira a mira porque já pré-mira
+  certo; agora o TRACK-PARADO passa pela classificação e, se o alvo estava
+  oculto ≥70% sem visão prévia/barulho/spotted, vira anotação sem peso, classe
+  ambíguo. Calibrado com ground truth do autor (demo dust2): o jogador rotulado
+  como wallhack legit foi o ÚNICO em 6 partidas (60 jogadores) a repetir o
+  sinal — 3x em vítimas distintas, oclusão 100%; os demais tiveram no máximo
+  1x (ruído de pré-aim comum). Score inalterado; +9 testes (50 no total).
 
 - 2026-07-15 · v6.6 (D1.1): exclusão por radar de teammate. Descoberto que o
   `demoparser2` expõe `approximate_spotted_by` (quem vê cada jogador) + `team_num`

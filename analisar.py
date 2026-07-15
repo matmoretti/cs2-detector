@@ -180,6 +180,24 @@ def teammate_spotou(spot_por, team_por, a_sid, v_sid, tini, tfim, passo=16):
     return False
 
 
+def premira_informada(oclusao_frac, viu_antes, barulho_recente, spotted_teammate):
+    """D4.5 (observacional): mira parada apontada para alvo OCULTO sem fonte
+    legítima de informação?
+
+    ESP "legit" não gira a mira — pré-mira certo. O descarte de giro <12° (L3,
+    feito contra falso positivo de aim assist) deixaria esse perfil invisível;
+    o que importa aqui é PARA ONDE a mira parada aponta: inimigo em movimento
+    atrás de parede (oclusão ≥70%), sem visão prévia, sem barulho da vítima e
+    sem spotted de teammate. Sem dado para excluir info legítima → não promove
+    (desconhecido nunca vira "não").
+    """
+    if oclusao_frac is None or oclusao_frac < 0.7:
+        return False
+    if viu_antes is None or barulho_recente is None:
+        return False
+    return not (viu_antes or barulho_recente or spotted_teammate)
+
+
 # ---------------------------------------------------------------------------
 # Extração da demo
 # ---------------------------------------------------------------------------
@@ -199,6 +217,7 @@ def novo_jogador(nome):
         "nome": nome, "kills": 0, "mortes": 0, "hs": 0,
         "smoke": 0, "wallbang": 0, "cego": 0,
         "flicks": 0, "reacoes": 0, "tracks": 0, "tracks_parede": 0,
+        "premira": 0, "vitimas_premira": [],
         "tiros": 0, "acertos": 0, "acertos_cabeca": 0,
         # L7: escalada de score exige vítimas DISTINTAS (vítima previsível
         # dispara o mesmo sinal em vários atacantes)
@@ -534,15 +553,20 @@ def analisar_demo(caminho):
                     "barulho_recente": vitima_barulho,
                 }
                 if giro_necessario < TRACK_MIN_GIRO:
-                    # segurar ângulo parado — jogada normal. Não vai para o HTML,
-                    # mas fica no dataset como controle 'descartado' (D0.2): sem
-                    # registro não dá para calibrar o limiar de giro sem intuição.
-                    momento("TRACK-PARADO",
-                            f"mira segurou ângulo (giro de {giro_necessario:.0f}° "
-                            f"< {TRACK_MIN_GIRO:.0f}°) por {duracao_s:.1f} s — "
-                            "jogada normal, não é tracking", 0,
-                            {**ctx_track, "classe": "descartado"},
-                            so_dataset=True)
+                    # segurar ângulo parado — descarte L3 (anti aim-assist), e
+                    # fica no dataset como controle (D0.2). MAS segue para a
+                    # classificação: ESP legit NÃO gira a mira, pré-mira certo —
+                    # se o alvo estava OCULTO e sem info legítima, vira anotação
+                    # 🎯 PRE-MIRA (D4.5, peso 0, calibrada no caso Mitocondria).
+                    mom = momento("TRACK-PARADO",
+                                  f"mira segurou ângulo (giro de "
+                                  f"{giro_necessario:.0f}° < "
+                                  f"{TRACK_MIN_GIRO:.0f}°) por {duracao_s:.1f} s "
+                                  "— jogada normal, não é tracking", 0,
+                                  {**ctx_track, "classe": "descartado"},
+                                  so_dataset=True)
+                    candidatos_track.append((atacante, mom, amostras,
+                                             a_sid, v_sid, seq_ini, seq_fim))
                 elif vitima_barulho:
                     momento("TRACK-INFO", f"mira acompanhou o alvo por "
                             f"{melhor_seq / 64.0:.1f} s, mas a vítima atirou/"
@@ -580,17 +604,25 @@ def analisar_demo(caminho):
             print(f"  (spotted/radar indisponível nesta demo: {e})")
 
     for atacante, mom, amostras, a_sid, v_sid, seq_ini, seq_fim in candidatos_track:
+        # dois perfis chegam aqui: TRACK (mira girou acompanhando) e
+        # TRACK-PARADO (mira parada — possível pré-mira informada, D4.5)
+        parado = mom["tipo"] == "TRACK-PARADO"
+
         # D1.1: se um teammate do atacante via a vítima durante o tracking, a
         # posição estava no radar do time (info legítima) — não é wallhack.
         spot_teammate = teammate_spotou(spot_por, team_por, a_sid, v_sid,
                                         seq_ini, seq_fim)
         mom["ctx"]["spotted_por_teammate"] = spot_teammate
         if spot_teammate:
-            mom["tipo"] = "TRACK-RADAR"
-            mom["peso"] = 0
-            mom["ctx"]["classe"] = "descartado"
-            mom["desc"] += (" — mas a vítima estava SPOTTED por um teammate do "
-                            "atacante (posição no radar do time — não pontua)")
+            if parado:  # já estava descartado; registra a contraprova extra
+                mom["desc"] += " (vítima também estava spotted por teammate)"
+            else:
+                mom["tipo"] = "TRACK-RADAR"
+                mom["peso"] = 0
+                mom["ctx"]["classe"] = "descartado"
+                mom["desc"] += (" — mas a vítima estava SPOTTED por um teammate "
+                                "do atacante (posição no radar do time — não "
+                                "pontua)")
             continue
         # L6: se o atacante VIU o alvo nos ~3 s antes da janela, é jogada de
         # "última posição conhecida", não wallhack
@@ -606,26 +638,56 @@ def analisar_demo(caminho):
             # só é contraprova confiável quando houve geometria para checar
             mom["ctx"]["viu_antes"] = viu_antes
         if viu_antes:
-            mom["tipo"] = "TRACK-VIU"
-            mom["peso"] = 0
-            mom["ctx"]["classe"] = "descartado"
-            mom["desc"] += (" — mas o atacante teve linha de visão para o alvo "
-                            "segundos antes (última posição conhecida — não pontua)")
+            if parado:
+                mom["desc"] += " (atacante teve linha de visão pouco antes)"
+            else:
+                mom["tipo"] = "TRACK-VIU"
+                mom["peso"] = 0
+                mom["ctx"]["classe"] = "descartado"
+                mom["desc"] += (" — mas o atacante teve linha de visão para o "
+                                "alvo segundos antes (última posição conhecida "
+                                "— não pontua)")
             continue
 
-        atras_parede = False
+        oclusao = None
         if checker and len(amostras) >= 4:
             invisiveis = sum(1 for a, v in amostras
                              if not checker.is_visible(a, v))
-            frac = invisiveis / len(amostras)
-            mom["ctx"]["oclusao_frac"] = frac
-            if frac >= 0.7:
-                atras_parede = True
-                mom["tipo"] = "TRACK-PAREDE"
-                mom["peso"] = 6
-                mom["desc"] += (f" — em {100 * frac:.0f}% do tempo havia PAREDE "
-                                "entre eles (checado na geometria do mapa)")
+            oclusao = invisiveis / len(amostras)
+            mom["ctx"]["oclusao_frac"] = oclusao
+
+        if parado:
+            # D4.5: mira humana parada sobre alvo oculto sem info legítima →
+            # promove do descarte para anotação observacional (peso 0). Pré-aim
+            # de ângulo comum ainda não é descartável, então classe "ambíguo".
+            if premira_informada(oclusao, mom["ctx"].get("viu_antes"),
+                                 mom["ctx"].get("barulho_recente"),
+                                 spot_teammate):
+                atacante["episodios_descarte"] = [
+                    m for m in atacante["episodios_descarte"] if m is not mom]
+                mom["tipo"] = "PRE-MIRA"
+                mom["peso"] = 0
+                mom["ctx"]["classe"] = "ambiguo"
+                mom["desc"] = (
+                    f"mira praticamente PARADA (giro de "
+                    f"{mom['ctx']['mudanca_angular_alvo_deg']:.0f}°) apontada "
+                    f"para alvo em movimento OCULTO por parede em "
+                    f"{100 * oclusao:.0f}% do tempo, por "
+                    f"{mom['ctx']['duracao_s']:.1f} s antes da kill — sem visão "
+                    "prévia, sem barulho da vítima e sem spotted de teammate. "
+                    "Pré-aim de ângulo comum não é descartável: em observação, "
+                    "sem peso")
+                atacante["momentos"].append(mom)
+                atacante["premira"] += 1
+                atacante["vitimas_premira"].append(mom["vitima"])
+            continue
+
+        atras_parede = oclusao is not None and oclusao >= 0.7
         if atras_parede:
+            mom["tipo"] = "TRACK-PAREDE"
+            mom["peso"] = 6
+            mom["desc"] += (f" — em {100 * oclusao:.0f}% do tempo havia PAREDE "
+                            "entre eles (checado na geometria do mapa)")
             atacante["tracks_parede"] += 1
             atacante["vitimas_parede"].append(mom["vitima"])
         else:
@@ -876,7 +938,8 @@ a { color:var(--ink2); }
 
 ICONES = {"FLICK": "⚡", "REAÇÃO": "⏱️", "TRACK": "🧲", "TRACK-PAREDE": "🚨",
           "TRACK-INFO": "🔊", "TRACK-VIU": "👀", "TRACK-RADAR": "📡",
-          "SMOKE": "💨", "SMOKE-COMUM": "🌫️", "PAREDE": "🧱", "CEGO": "🫣"}
+          "PRE-MIRA": "🎯", "SMOKE": "💨", "SMOKE-COMUM": "🌫️",
+          "PAREDE": "🧱", "CEGO": "🫣"}
 
 
 def svg_radar(radar, momentos):
@@ -1045,6 +1108,7 @@ def gerar_html(jogadores, meta, hist):
       <div><b>{p['flicks']}</b>flicks sobre-humanos</div>
       <div><b>{p['tracks_parede']}</b>trackings por parede</div>
       <div><b>{p['tracks']}</b>trackings pré-confronto</div>
+      <div><b>{p['premira']}</b>pré-miras em alvo oculto</div>
       <div><b>{p['smoke']}</b>kills por smoke</div>
       <div><b>{p['wallbang']}</b>wallbangs</div>
     </div>
@@ -1065,7 +1129,7 @@ def gerar_html(jogadores, meta, hist):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Relatório de suspeitos — CS2</title><style>{CSS}</style></head>
 <body><div class="wrap">
-<h1>🔍 Relatório de suspeitos — v5</h1>
+<h1>🔍 Relatório de suspeitos</h1>
 <p class="sub">{html.escape(meta['arquivo'])} · mapa {html.escape(meta['mapa'])}
  · {meta['rounds']} rounds</p>
 
@@ -1129,6 +1193,13 @@ com seus próprios olhos (a demo pula pra ~5 s antes do lance).</div>
   (🔊 posição revelada) ou se um teammate a enxergava (📡 spotted no radar do
   time — informação legítima, checada no campo nativo da demo).
   (Smoke não é parede — kills por smoke são o 💨.)</li>
+<li><strong>🎯 Pré-mira em alvo oculto (em observação, SEM peso no score):</strong>
+  mira praticamente parada (giro &lt;{TRACK_MIN_GIRO:.0f}°) apontada para um
+  inimigo em movimento ATRÁS de parede (≥70% do tempo), sem visão prévia, sem
+  barulho da vítima e sem spotted de teammate. É o perfil de ESP "legit": mira
+  humana, informação ilegítima — a vantagem aparece ANTES do tiro. Pré-mirar um
+  ângulo comum é jogada normal, então este sinal não pontua: assista aos lances
+  e procure repetição em vítimas e posições DIFERENTES.</li>
 <li><strong>💨 Kill por smoke:</strong> só pontua se foi tiro PRECISO (≤4 tiros
   em 2 s) a ≥7 m — spammar posição conhecida através da fumaça é jogada normal
   e aparece como 🌫️ sem pontuar. Filtro calibrado com feedback de jogador

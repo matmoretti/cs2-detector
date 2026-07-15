@@ -101,3 +101,16 @@ fica desnecessário para aquele padrão.
   CIRÚRGICO". Primeiros dados (Dust2): suspeito principal 3x, outros dois
   jogadores 1x cada. Ganha peso no score quando houver baseline de mais
   partidas (regra do projeto: sinal novo observa antes de pontuar).
+- **Pré-mira parada em alvo oculto (ESP "legit"):** o descarte L3 (giro <12°,
+  anti aim-assist) escondia o perfil que NÃO gira a mira porque já pré-mira
+  certo — a vantagem do ESP legit aparece ANTES do tiro. **Status: codificado
+  como anotação sem peso (v6.7)** — 🎯 PRE-MIRA: mira parada sobre alvo em
+  movimento oculto (oclusão ≥70%) sem visão prévia, sem barulho e sem spotted;
+  classe "ambíguo" (pré-aim de ângulo comum não é descartável sem mapa de
+  ângulos). Baseline (6 partidas, 60 jogadores): 8 jogadores com 1x = ruído
+  normal de pré-aim; apenas o caso de calibração do autor (wallhack legit,
+  dust2) repetiu — 3x em vítimas DISTINTAS, oclusão 100%. O mesmo jogador
+  também acumulou 3x GATILHO CIRÚRGICO em rounds diferentes: dois sinais
+  independentes convergindo no mesmo perfil é o caminho da futura escada
+  (L7: vítimas distintas). Nota: oclusão vem da geometria de PAREDES — smoke
+  não conta como oclusão aqui (esse caso é coberto pelo GATILHO CIRÚRGICO).

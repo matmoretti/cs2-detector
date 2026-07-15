@@ -13,7 +13,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from analisar import norm180, giro_mira, desvio_mira, escada, teammate_spotou
+from analisar import (norm180, giro_mira, desvio_mira, escada,
+                      teammate_spotou, premira_informada)
 
 
 class TestNorm180(unittest.TestCase):
@@ -131,6 +132,43 @@ class TestTeammateSpotou(unittest.TestCase):
     def test_sem_dados_de_time_nao_afirma(self):
         spot = {(100, "V"): ["B"]}
         self.assertFalse(teammate_spotou(spot, {}, "A", "V", 100, 132))
+
+
+class TestPremiraInformada(unittest.TestCase):
+    """D4.5: promover mira parada a PRE-MIRA exige alvo oculto E zero fonte
+    legítima de informação — e dado ausente nunca conta como 'não havia'."""
+
+    def test_caso_mitocondria(self):
+        # oclusão alta, sem visão prévia, sem barulho, sem spotted → promove
+        self.assertTrue(premira_informada(0.9, False, False, False))
+
+    def test_alvo_visivel_nao_promove(self):
+        # mirar em alvo visível é jogo normal
+        self.assertFalse(premira_informada(0.3, False, False, False))
+
+    def test_sem_geometria_nao_promove(self):
+        # oclusão desconhecida → não dá para afirmar que o alvo estava oculto
+        self.assertFalse(premira_informada(None, False, False, False))
+
+    def test_viu_antes_exclui(self):
+        self.assertFalse(premira_informada(0.9, True, False, False))
+
+    def test_barulho_exclui(self):
+        self.assertFalse(premira_informada(0.9, False, True, False))
+
+    def test_spotted_exclui(self):
+        self.assertFalse(premira_informada(0.9, False, False, True))
+
+    def test_visao_desconhecida_nao_promove(self):
+        # 'desconhecido' nunca vira 'não' (contrato D0)
+        self.assertFalse(premira_informada(0.9, None, False, False))
+
+    def test_barulho_desconhecido_nao_promove(self):
+        self.assertFalse(premira_informada(0.9, False, None, False))
+
+    def test_limiar_de_oclusao(self):
+        self.assertTrue(premira_informada(0.7, False, False, False))
+        self.assertFalse(premira_informada(0.69, False, False, False))
 
 
 if __name__ == "__main__":
