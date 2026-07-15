@@ -30,8 +30,8 @@ import datetime
 # sempre que a semântica de um campo mudar — o dataset guarda com qual versão
 # cada linha foi gerada.
 SCHEMA_VERSAO = "d0.1"      # formato do registro de episódio (este arquivo)
-VERSAO_FEATURES = "d0.2"    # semântica dos campos de contexto/geometria/mira
-VERSAO_REGRAS = "v6.7"      # versão do detector que emitiu a saída por regra
+VERSAO_FEATURES = "d0.3"    # semântica dos campos de contexto/geometria/mira
+VERSAO_REGRAS = "v6.9"      # versão do detector que emitiu a saída por regra
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
 PASTA_DADOS = os.path.join(PASTA, "dados")
@@ -245,6 +245,9 @@ def montar_episodio(mom, meta):
             "desvio_min_deg": ctx.get("desvio_min_deg"),
             "giro_mira_deg": ctx.get("giro_mira_deg"),
             "duracao_s": ctx.get("duracao_s"),
+            # reação pós-LOS (v6.9): tempo LOS-abrir→tiro e desvio na abertura
+            "reacao_pos_los_ms": ctx.get("reacao_pos_los_ms"),
+            "desvio_abertura_deg": ctx.get("desvio_abertura_deg"),
         },
 
         # Contraprovas: informação legítima que poderia explicar a suspeita.

@@ -57,6 +57,11 @@ TRACK_MIN_MOVIMENTO = 150.0  # o alvo precisa ter se movido (senão é só segur
 TRACK_MIN_DIST = 400.0  # ignora tracking a queima-roupa (muito ruído)
 TRACK_MIN_GIRO = 12.0   # a DIREÇÃO até o alvo precisa ter mudado: mira parada
                         # segurando ângulo enquanto o alvo anda no cone NÃO é tracking
+REFLEXO_MAX_TICKS = 10  # ~156 ms: tiro letal até isso após a LOS abrir (vindo
+                        # de oclusão) fica abaixo do piso humano de reação.
+                        # Calibrado na demo rotulada: confirmado=31 ms,
+                        # refutado=250 ms; 9 das 13 kills <200 ms do lobby
+                        # eram do caso de ground truth
 
 ARMAS_IGNORAR = {
     "knife", "knife_t", "bayonet", "taser",
@@ -180,6 +185,36 @@ def teammate_spotou(spot_por, team_por, a_sid, v_sid, tini, tfim, passo=16):
     return False
 
 
+def reacao_pos_los(visivel, T, passo=2, max_atras=128, oclusao_min=3):
+    """Ticks entre a linha de visão ABRIR (vindo de oclusão sustentada) e a
+    kill em T. Retorna (reacao_ticks, tick_abertura) ou (None, None).
+
+    `visivel(t)` → True/False/None (None = sem dado no tick). Regras:
+      * a vítima precisa estar visível no tick da kill (senão é wallbang);
+      * andando para trás, o primeiro tick oculto marca a abertura — mas só
+        conta se a oclusão foi SUSTENTADA (>= oclusao_min amostras): passar
+        atrás de um poste não é "sair de oclusão";
+      * dado faltando ou janela toda visível → não mensurável (None).
+
+    A decisão de atirar em menos de ~200 ms vindo de oclusão sugere que o
+    atacante já sabia quem ia aparecer (corroborado pela 1ª rotulagem, R25).
+    """
+    if visivel(T) is not True:
+        return None, None
+    t = T - passo
+    while t >= T - max_atras:
+        v = visivel(t)
+        if v is None:
+            return None, None
+        if v is False:
+            for i in range(1, oclusao_min):
+                if visivel(t - i * passo) is not False:
+                    return None, None  # oclusão-relâmpago (quina/poste)
+            return T - (t + passo), t + passo
+        t -= passo
+    return None, None
+
+
 def segundos_no_round(freeze_ticks, tick, tickrate=64):
     """Segundos desde o último freeze_end antes do tick (None se desconhecido).
 
@@ -231,6 +266,7 @@ def novo_jogador(nome):
         "smoke": 0, "wallbang": 0, "cego": 0,
         "flicks": 0, "reacoes": 0, "tracks": 0, "tracks_parede": 0,
         "premira": 0, "vitimas_premira": [],
+        "reflexos": 0, "vitimas_reflexo": [],
         "tiros": 0, "acertos": 0, "acertos_cabeca": 0,
         # L7: escalada de score exige vítimas DISTINTAS (vítima previsível
         # dispara o mesmo sinal em vários atacantes)
@@ -365,6 +401,10 @@ def analisar_demo(caminho):
 
     jogadores = {}
     candidatos_track = []
+    candidatos_reflexo = []
+
+    # geometria carregada antes do loop: a reação pós-LOS precisa dela por kill
+    checker = carregar_visibilidade(mapa) if kills_validas else None
 
     def jog(sid, nome):
         p = jogadores.setdefault(str(sid), novo_jogador(nome))
@@ -604,16 +644,86 @@ def analisar_demo(caminho):
                     candidatos_track.append((atacante, mom, amostras,
                                              a_sid, v_sid, seq_ini, seq_fim))
 
-    # --- classificação dos trackings: havia parede na linha de visão? ---
-    checker = carregar_visibilidade(mapa) if candidatos_track else None
+        # --- reação pós-LOS: a linha de visão abriu → quanto até o tiro? ---
+        # decisão de atirar abaixo do piso humano, vindo de oclusão sustentada,
+        # sugere que o atacante já sabia quem ia aparecer (1ª rotulagem: lance
+        # confirmado = 31 ms, refutado = 250 ms)
+        if (checker and arma not in ARMAS_IGNORAR
+                and int(get(m, "penetrated", 0)) == 0
+                and not get(m, "thrusmoke", False)
+                and not get(m, "attackerblind", False)):
+            def vis_reflexo(t):
+                a = lk.get((t, a_sid))
+                v = lk.get((t, v_sid))
+                if a is None or v is None or (not v[5] and t != T):
+                    return None
+                return checker.is_visible((a[0], a[1], a[2] + 64.0),
+                                          (v[0], v[1], v[2] + 32.0))
 
+            reacao_t, t_abre = reacao_pos_los(vis_reflexo, T)
+            if reacao_t is not None and reacao_t <= REFLEXO_MAX_TICKS:
+                a0 = lk.get((t_abre, a_sid))
+                v0 = lk.get((t_abre, v_sid))
+                if a0 and v0:
+                    dist_u = math.hypot(v0[0] - a0[0], v0[1] - a0[1],
+                                        v0[2] - a0[2])
+                    desvio_abre, _ = desvio_mira(a0[0], a0[1], a0[2],
+                                                 a0[3], a0[4],
+                                                 v0[0], v0[1], v0[2])
+                else:
+                    dist_u = desvio_abre = None
+                if dist_u is not None and dist_u >= TRACK_MIN_DIST:
+                    ms = reacao_t * 1000.0 / 64.0
+                    # info legítima? barulho da vítima e re-peek do atacante
+                    bar_v = barulho_ticks.get(v_sid, [])
+                    fez_barulho = (bisect.bisect_right(bar_v, T)
+                                   - bisect.bisect_left(bar_v,
+                                                        t_abre - 320)) > 0
+                    viu = False
+                    for t in range(t_abre - 192, t_abre - 4, 16):
+                        va = lk.get((t, a_sid))
+                        vv = lk.get((t, v_sid))
+                        if va and vv and vv[5] and checker.is_visible(
+                                (va[0], va[1], va[2] + 64.0),
+                                (vv[0], vv[1], vv[2] + 32.0)):
+                            viu = True
+                            break
+                    ctx_r = {"reacao_pos_los_ms": ms,
+                             "desvio_abertura_deg": desvio_abre,
+                             "distancia_us": dist_u,
+                             "viu_antes": viu,
+                             "barulho_recente": fez_barulho}
+                    if fez_barulho or viu:
+                        motivo = ("vítima fez barulho antes" if fez_barulho
+                                  else "atacante reviu o alvo pouco antes")
+                        momento("REFLEXO", f"tiro {ms:.0f} ms após a linha de "
+                                f"visão abrir, mas {motivo} (info legítima — "
+                                "não anota)", 0,
+                                {**ctx_r, "classe": "descartado"},
+                                so_dataset=True)
+                    else:
+                        mom = momento(
+                            "REFLEXO",
+                            f"linha de visão abriu e o tiro letal saiu em "
+                            f"{ms:.0f} ms, com a mira já a "
+                            f"{desvio_abre:.1f}° do alvo (vindo de oclusão "
+                            "sustentada, sem barulho/visão prévia) — abaixo "
+                            "do piso humano de reação; em observação, sem "
+                            "peso", 0,
+                            {**ctx_r, "classe": "ambiguo"})
+                        candidatos_reflexo.append((atacante, mom, a_sid,
+                                                   v_sid, t_abre, T))
+
+    # --- classificação dos trackings: havia parede na linha de visão? ---
     # D1.1: quem via a vítima (radar) nas janelas dos candidatos. Uma única
     # extração de approximate_spotted_by + team_num para os ticks relevantes.
     spot_por, team_por = {}, {}
-    if candidatos_track:
+    if candidatos_track or candidatos_reflexo:
         ticks_spot = set()
         for _, _, _, _, _, s_ini, s_fim in candidatos_track:
             ticks_spot.update(range(s_ini, s_fim + 1, 16))
+        for _, _, _, _, t_abre, T_k in candidatos_reflexo:
+            ticks_spot.update(range(max(1, t_abre - 320), T_k + 1, 16))
         try:
             sdf = parser.parse_ticks(["approximate_spotted_by", "team_num"],
                                      ticks=sorted(ticks_spot))
@@ -715,6 +825,24 @@ def analisar_demo(caminho):
         else:
             atacante["tracks"] += 1
             atacante["vitimas_track"].append(mom["vitima"])
+
+    # --- reflexos pós-LOS: vítima estava no radar do time? (D1.1) ---
+    for atacante, mom, a_sid, v_sid, t_abre, T_k in candidatos_reflexo:
+        spot_teammate = teammate_spotou(spot_por, team_por, a_sid, v_sid,
+                                        max(1, t_abre - 320), T_k)
+        mom["ctx"]["spotted_por_teammate"] = spot_teammate
+        if spot_teammate:
+            # teammate via a vítima → o atacante podia estar pré-decidido
+            # legitimamente (call/radar). Sai do relatório, fica no dataset.
+            mom["ctx"]["classe"] = "descartado"
+            mom["desc"] += (" — mas a vítima estava SPOTTED por teammate "
+                            "(info legítima — não anota)")
+            atacante["momentos"] = [x for x in atacante["momentos"]
+                                    if x is not mom]
+            atacante["episodios_descarte"].append(mom)
+        else:
+            atacante["reflexos"] += 1
+            atacante["vitimas_reflexo"].append(mom["vitima"])
 
     # --- precisão do jogo inteiro ---
     for sid, lst in tiros_ticks.items():
@@ -960,8 +1088,8 @@ a { color:var(--ink2); }
 
 ICONES = {"FLICK": "⚡", "REAÇÃO": "⏱️", "TRACK": "🧲", "TRACK-PAREDE": "🚨",
           "TRACK-INFO": "🔊", "TRACK-VIU": "👀", "TRACK-RADAR": "📡",
-          "PRE-MIRA": "🎯", "SMOKE": "💨", "SMOKE-COMUM": "🌫️",
-          "PAREDE": "🧱", "CEGO": "🫣"}
+          "PRE-MIRA": "🎯", "REFLEXO": "🧠", "SMOKE": "💨",
+          "SMOKE-COMUM": "🌫️", "PAREDE": "🧱", "CEGO": "🫣"}
 
 
 def svg_radar(radar, momentos):
@@ -1131,6 +1259,7 @@ def gerar_html(jogadores, meta, hist):
       <div><b>{p['tracks_parede']}</b>trackings por parede</div>
       <div><b>{p['tracks']}</b>trackings pré-confronto</div>
       <div><b>{p['premira']}</b>pré-miras em alvo oculto</div>
+      <div><b>{p['reflexos']}</b>reflexos pós-LOS</div>
       <div><b>{p['smoke']}</b>kills por smoke</div>
       <div><b>{p['wallbang']}</b>wallbangs</div>
     </div>
@@ -1222,6 +1351,15 @@ com seus próprios olhos (a demo pula pra ~5 s antes do lance).</div>
   humana, informação ilegítima — a vantagem aparece ANTES do tiro. Pré-mirar um
   ângulo comum é jogada normal, então este sinal não pontua: assista aos lances
   e procure repetição em vítimas e posições DIFERENTES.</li>
+<li><strong>🧠 Reflexo pós-LOS (em observação, SEM peso no score):</strong> tempo
+  entre a linha de visão ABRIR (vindo de trás de parede) e o tiro letal.
+  Reação visual humana em jogo fica acima de ~200 ms; tiro em
+  ≤{REFLEXO_MAX_TICKS * 15.625:.0f} ms com a mira já colada no alvo indica
+  decisão tomada ANTES de ver. Não anota se a vítima fez barulho, se o
+  atacante a tinha visto há pouco (re-peek) ou se um teammate a via no radar.
+  Um lance isolado pode ser peek advantage ou sorte de prefire — procure
+  repetição em vítimas distintas. (Difere do ⏱️: lá mede-se giro+parada da
+  mira; aqui, a decisão de atirar após a parede abrir.)</li>
 <li><strong>💨 Kill por smoke:</strong> só pontua se foi tiro PRECISO (≤4 tiros
   em 2 s) a ≥7 m — spammar posição conhecida através da fumaça é jogada normal
   e aparece como 🌫️ sem pontuar. Filtro calibrado com feedback de jogador

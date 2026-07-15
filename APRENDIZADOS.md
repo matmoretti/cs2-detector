@@ -100,9 +100,16 @@ fica desnecessário para aquele padrão.
   oclusão; o modelo atual usa só velocidade >110 u/s.
 - **Reação pós-LOS:** medir o tempo entre a linha de visão abrir e o tiro
   (≥200 ms = humano) para kills que terminam wall-tracks. **Corroborado pela
-  1ª rotulagem (dust2 R25):** o autor apontou "reflexo rápido demais, deve ter
-  info" num lance PRE-MIRA confirmado — é o discriminador natural entre
-  pré-aim de abertura normal e pré-aim informado. Próximo sinal a implementar.
+  1ª rotulagem (dust2 R25)** e **codificado como anotação sem peso (v6.9)** —
+  🧠 REFLEXO: tiro letal ≤156 ms (10 ticks) após a LOS abrir vindo de oclusão
+  SUSTENTADA, distância ≥400 u, sem barulho da vítima, sem re-peek e sem
+  spotted de teammate. Calibração na demo rotulada: lance confirmado = 31 ms,
+  refutado = 250 ms (o limiar fica 94 ms abaixo do refutado). Baseline
+  6 partidas/60 jogadores: ZERO anotações fora do caso de ground truth
+  (5x em 3 vítimas distintas, 31–156 ms) + 1 lance isolado de 0 ms de outro
+  jogador (possível peek advantage — ocorrência única não diz nada). 18 kills
+  rápidas foram descartadas por info legítima: são as exclusões que tornam o
+  sinal limpo. Wallbang/smoke/cego ficam fora (têm sinais próprios).
 - **Assinatura da mira no pipeline:** integrar o protótipo validado (dp de
   reação, jerk, spinbot) como sinais nativos do analisar.py.
 - **Correlação de tracking (forense):** corr entre Δdireção-ao-alvo e Δmira

@@ -14,7 +14,8 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from analisar import (norm180, giro_mira, desvio_mira, escada,
-                      teammate_spotou, premira_informada, segundos_no_round)
+                      teammate_spotou, premira_informada, segundos_no_round,
+                      reacao_pos_los)
 
 
 class TestNorm180(unittest.TestCase):
@@ -190,6 +191,42 @@ class TestSegundosNoRound(unittest.TestCase):
 
     def test_tickrate_diferente(self):
         self.assertAlmostEqual(segundos_no_round([0], 128, tickrate=128), 1.0)
+
+
+class TestReacaoPosLos(unittest.TestCase):
+    """Tempo entre a LOS abrir (vindo de oclusão sustentada) e a kill."""
+
+    @staticmethod
+    def _vis(mapa, padrao=True):
+        return lambda t: mapa.get(t, padrao)
+
+    def test_abertura_com_oclusao_sustentada(self):
+        # kill em T=1000; oculto de 990 para trás → abriu em 992
+        vis = self._vis({990: False, 988: False, 986: False})
+        reacao, abertura = reacao_pos_los(vis, 1000)
+        self.assertEqual((reacao, abertura), (8, 992))
+
+    def test_vitima_oculta_na_kill_e_wallbang(self):
+        vis = self._vis({1000: False})
+        self.assertEqual(reacao_pos_los(vis, 1000), (None, None))
+
+    def test_janela_toda_visivel_nao_mensuravel(self):
+        self.assertEqual(reacao_pos_los(self._vis({}), 1000), (None, None))
+
+    def test_oclusao_relampago_nao_conta(self):
+        # um único sample oculto (poste/quina) não é "sair de oclusão"
+        vis = self._vis({990: False})
+        self.assertEqual(reacao_pos_los(vis, 1000), (None, None))
+
+    def test_dado_faltando_aborta(self):
+        vis = self._vis({994: None})
+        self.assertEqual(reacao_pos_los(vis, 1000), (None, None))
+
+    def test_reacao_imediata(self):
+        # oculto até 2 ticks antes da kill (peek advantage extremo)
+        vis = self._vis({998: False, 996: False, 994: False})
+        reacao, abertura = reacao_pos_los(vis, 1000)
+        self.assertEqual((reacao, abertura), (0, 1000))
 
 
 if __name__ == "__main__":

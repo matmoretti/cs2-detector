@@ -154,8 +154,9 @@ esperar flick, lock ou tracking perfeito para encontrar candidatos.
   normal; só o caso de calibração do autor repetiu (3x, vítimas distintas).
   **1ª revisão do autor: 2 dos 3 confirmados** (contexto; reflexo pós-LOS)
   **e 1 refutado** (abertura de round — falso positivo documentado); exclusão
-  por timing foi calibrada e REFUTADA antes de virar regra (v6.8). Falta:
-  reação pós-LOS, mapa de ângulos comuns e escada por vítimas distintas.
+  por timing foi calibrada e REFUTADA antes de virar regra (v6.8). Reação
+  pós-LOS: ✅ v6.9 (anotação 🧠 REFLEXO). Falta: mapa de ângulos comuns e
+  escada por vítimas distintas.
 - ⏳ D4.6. Reunir decisões de **prefire, wallbang e utility seletivos**: não
   apenas acertar alguém, mas escolher posição incomum/ocupada sem spam,
   lineup, visão recente ou outro sinal. D3 produz a evidência micro; aqui ela
@@ -262,6 +263,16 @@ comparação antes/depois e justificativa em `APRENDIZADOS.md`.
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-15 · v6.9: anotação 🧠 REFLEXO (reação pós-LOS) — tiro letal ≤156 ms
+  após a linha de visão abrir, vindo de oclusão sustentada, sem barulho/
+  re-peek/spotted; wallbang, smoke e cego ficam fora. Limiar calibrado nos
+  lances rotulados (confirmado = 31 ms, refutado = 250 ms). Baseline
+  6 partidas/60 jogadores: zero anotações fora do caso de ground truth — que
+  somou 5x em 3 vítimas distintas e agora concentra TRÊS sinais observacionais
+  independentes (🎯 3x + 🧠 5x + 💨 gatilho 3x), todos com peso 0 aguardando
+  escada calibrada. Geometria passa a carregar para toda demo com kills.
+  +6 testes (65 no total).
 
 - 2026-07-15 · v6.8 (D0.3): primeira rotulagem humana real + `rotular.py`
   (revisões append-only). O autor revisou 4 lances do caso de calibração em
