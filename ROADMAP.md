@@ -67,11 +67,16 @@ inclusão/exclusão reproduzível; nenhum limiar é escolhido somente por intui�
 **Estado:** a fundação de dados (M0 da ARQUITETURA-ML) está materializada; a
 calibração assistida por revisão (D0.3) é o próximo passo.
 
-### D1. Modelo de informação legítima ⏳
+### D1. Modelo de informação legítima 🔨
 
-- ⏳ D1.1. Pesquisar no `demoparser2` e em demos reais campos de *spotted*/
-  radar por teammate. Se forem confiáveis, incorporar como exclusão; se não
-  forem extraíveis, marcar a incerteza explicitamente no relatório.
+- ✅ D1.1. `spotted`/radar por teammate É extraível e confiável no
+  `demoparser2` (`approximate_spotted_by` = lista de quem vê cada jogador;
+  `team_num` = time). Incorporado como exclusão nativa: se um teammate do
+  atacante via a vítima durante o tracking, a posição estava no radar do time
+  → `TRACK-RADAR` (📡), peso 0. Tem prioridade sobre `TRACK-VIU`/`TRACK-PAREDE`.
+  A contraprova `radar_spotted` do episódio deixa de ser sempre "desconhecido"
+  e passa a `sim`/`nao` real nos trackings. Validado em caso real (kill onde
+  só o teammate via a vítima → exclusão dispara).
 - ⏳ D1.2. Trocar a regra binária de barulho por contexto de audibilidade:
   tipo do evento, distância, tempo decorrido, movimento e oclusão quando a
   demo permitir. Começar como anotação, sem reduzir/aumentar score.
@@ -246,6 +251,15 @@ comparação antes/depois e justificativa em `APRENDIZADOS.md`.
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-15 · v6.6 (D1.1): exclusão por radar de teammate. Descoberto que o
+  `demoparser2` expõe `approximate_spotted_by` (quem vê cada jogador) + `team_num`
+  de forma confiável. Novo sinal 📡 `TRACK-RADAR`: se um teammate do atacante
+  via a vítima durante o tracking, a posição estava no radar do time (info
+  legítima) — não pontua, prioridade sobre 👀/🚨. A contraprova `radar_spotted`
+  do contrato D0.1 vira `sim`/`nao` real nos trackings. Só reduz falso positivo
+  (nunca aumenta score). +6 testes (41 no total). Validado em 3 mapas + caso
+  positivo real.
 
 - 2026-07-15 · v6.5 (D0.1): fundação de dados forense. Cada lance suspeito ou
   descartado vira um **episódio** versionado e reproduzível em

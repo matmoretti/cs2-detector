@@ -31,7 +31,7 @@ import datetime
 # cada linha foi gerada.
 SCHEMA_VERSAO = "d0.1"      # formato do registro de episódio (este arquivo)
 VERSAO_FEATURES = "d0.1"    # semântica dos campos de contexto/geometria/mira
-VERSAO_REGRAS = "v6.4"      # versão do detector que emitiu a saída por regra
+VERSAO_REGRAS = "v6.6"      # versão do detector que emitiu a saída por regra
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
 PASTA_DADOS = os.path.join(PASTA, "dados")
@@ -253,7 +253,10 @@ def montar_episodio(mom, meta):
             "barulho_vitima": tri_estado(
                 ctx.get("barulho_recente"),
                 "barulho da vítima não avaliado neste tipo de sinal"),
-            "radar_spotted": desconhecido(RAZAO_SPOTTED),
+            # D1.1: 'spotted' é nativo e confiável. Vira sim/nao real nos
+            # trackings; nos demais sinais permanece desconhecido (não avaliado).
+            "radar_spotted": tri_estado(ctx.get("spotted_por_teammate"),
+                                        RAZAO_SPOTTED),
             "call_teammate": desconhecido(RAZAO_CALL),
         },
 

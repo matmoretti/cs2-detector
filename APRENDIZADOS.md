@@ -20,6 +20,7 @@ fica desnecessário para aquele padrão.
 | L5 | Granada/decoy jogada também revela posição, não só tiro. | Veredito de uma AWP por smoke (vítima soltou decoy 9 s antes) | v6.3, "barulho" inclui granadas |
 | L6 | Atacante que TEVE linha de visão para o alvo segundos antes da janela joga por "última posição conhecida" — não é wallhack. | Dois vereditos da perícia do Cache (num deles o atacante viu o alvo 3,6 s antes) | v6.3, raycast em [janela−3 s] → 👀 TRACK-VIU, 0 pts |
 | L7 | Repetição de sinal na MESMA vítima não é padrão (a vítima pode ser previsível — um top-frag disparou o sinal de 3 atacantes diferentes). Escalada de score exige vítimas DISTINTAS. | Vereditos da perícia do Cache | v6.3, escadas de smoke/track/parede contam vítimas distintas |
+| L8 | Vítima vista por um TEAMMATE do atacante estava no radar do time = info legítima (o `demoparser2` expõe isso de forma confiável). Tracking sobre alvo que o time enxergava não é wallhack. | Pesquisa no demoparser2 (`approximate_spotted_by` + `team_num`), validada em caso real | v6.6, 📡 TRACK-RADAR (peso 0), prioridade sobre 👀/🚨 |
 
 ## Lições de processo (para os workflows de perícia)
 
@@ -76,9 +77,12 @@ fica desnecessário para aquele padrão.
 
 ## Pendentes (descobertos, ainda não codificados)
 
-- **Spotted por teammate:** vítima marcada no radar por um companheiro do
-  atacante = info legítima (usado nos vereditos, mas exige extrair o estado
-  "spotted" da demo — pesquisar suporte no demoparser2).
+- **Versionamento do dataset de episódios:** o `episode_id` inclui a categoria
+  do lance e o dedup é por id — reprocessar a MESMA demo com uma versão de
+  regras diferente NÃO regrava o episódio (fica a versão antiga) a menos que a
+  categoria mude. Bom para uso normal (cada demo é nova), mas para comparar
+  antes/depois de uma mudança de regra (D5.3) o dedup deveria ser por
+  (episode_id, versão). Baixa prioridade até existir o loop de calibração.
 - **Audibilidade com atenuação:** passo audível tem alcance (~1100 unidades) e
   oclusão; o modelo atual usa só velocidade >110 u/s.
 - **Reação pós-LOS:** medir o tempo entre a linha de visão abrir e o tiro

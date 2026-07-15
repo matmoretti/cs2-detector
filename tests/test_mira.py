@@ -13,7 +13,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from analisar import norm180, giro_mira, desvio_mira, escada
+from analisar import norm180, giro_mira, desvio_mira, escada, teammate_spotou
 
 
 class TestNorm180(unittest.TestCase):
@@ -92,6 +92,45 @@ class TestEscada(unittest.TestCase):
 
     def test_lista_vazia(self):
         self.assertEqual(escada(5, []), 0)
+
+
+class TestTeammateSpotou(unittest.TestCase):
+    """D1.1: exclusão de tracking quando a vítima estava no radar do time."""
+
+    def setUp(self):
+        # A=atacante (time 2), V=vítima (time 3),
+        # B=teammate de A (time 2), C=teammate de V (time 3)
+        self.team = {}
+        for t in (100, 116, 132):
+            self.team[(t, "A")] = 2
+            self.team[(t, "B")] = 2
+            self.team[(t, "V")] = 3
+            self.team[(t, "C")] = 3
+
+    def test_teammate_do_atacante_ve(self):
+        spot = {(100, "V"): ["B"]}
+        self.assertTrue(teammate_spotou(spot, self.team, "A", "V", 100, 132))
+
+    def test_so_o_proprio_atacante_ve_nao_conta(self):
+        # o atacante enxergar não é "info de radar do teammate"
+        spot = {(100, "V"): ["A"]}
+        self.assertFalse(teammate_spotou(spot, self.team, "A", "V", 100, 132))
+
+    def test_alguem_do_time_da_vitima_ve_nao_conta(self):
+        spot = {(100, "V"): ["C"]}
+        self.assertFalse(teammate_spotou(spot, self.team, "A", "V", 100, 132))
+
+    def test_ninguem_ve(self):
+        spot = {(100, "V"): []}
+        self.assertFalse(teammate_spotou(spot, self.team, "A", "V", 100, 132))
+
+    def test_ve_em_qualquer_tick_da_janela(self):
+        spot = {(132, "V"): ["B"]}  # só no último tick amostrado
+        self.assertTrue(teammate_spotou(spot, self.team, "A", "V", 100, 132))
+
+    def test_sem_dados_de_time_nao_afirma(self):
+        spot = {(100, "V"): ["B"]}
+        self.assertFalse(teammate_spotou(spot, {}, "A", "V", 100, 132))
 
 
 if __name__ == "__main__":

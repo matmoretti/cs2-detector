@@ -156,6 +156,30 @@ def giro_mira(yaw1, pitch1, yaw2, pitch2):
                       pitch2 - pitch1)
 
 
+def teammate_spotou(spot_por, team_por, a_sid, v_sid, tini, tfim, passo=16):
+    """D1.1: algum TEAMMATE do atacante via a vítima em [tini, tfim]?
+
+    Se sim, a posição da vítima estava legitimamente no radar do time do
+    atacante (info compartilhada), não é evidência de wallhack. Usa o campo
+    nativo `approximate_spotted_by` (quem vê cada jogador) + `team_num`.
+
+    spot_por: {(tick, sid): [sids que enxergam sid]}
+    team_por: {(tick, sid): team_num}
+    O próprio atacante enxergando NÃO conta (queremos info de teammate).
+    """
+    for t in range(tini, tfim + 1, passo):
+        veem = spot_por.get((t, v_sid))
+        if not veem:
+            continue
+        team_atk = team_por.get((t, a_sid))
+        if team_atk is None:
+            continue
+        for s in veem:
+            if s != a_sid and team_por.get((t, s)) == team_atk:
+                return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Extração da demo
 # ---------------------------------------------------------------------------
@@ -532,11 +556,42 @@ def analisar_demo(caminho):
                                   "sem barulho da vítima nos 5 s anteriores", 4,
                                   {**ctx_track, "classe": "candidato"})
                     candidatos_track.append((atacante, mom, amostras,
-                                             a_sid, v_sid, seq_ini))
+                                             a_sid, v_sid, seq_ini, seq_fim))
 
     # --- classificação dos trackings: havia parede na linha de visão? ---
     checker = carregar_visibilidade(mapa) if candidatos_track else None
-    for atacante, mom, amostras, a_sid, v_sid, seq_ini in candidatos_track:
+
+    # D1.1: quem via a vítima (radar) nas janelas dos candidatos. Uma única
+    # extração de approximate_spotted_by + team_num para os ticks relevantes.
+    spot_por, team_por = {}, {}
+    if candidatos_track:
+        ticks_spot = set()
+        for _, _, _, _, _, s_ini, s_fim in candidatos_track:
+            ticks_spot.update(range(s_ini, s_fim + 1, 16))
+        try:
+            sdf = parser.parse_ticks(["approximate_spotted_by", "team_num"],
+                                     ticks=sorted(ticks_spot))
+            for r in sdf.itertuples(index=False):
+                key = (int(r.tick), str(r.steamid))
+                spot_por[key] = [str(x) for x in (r.approximate_spotted_by or [])]
+                team_por[key] = (int(r.team_num)
+                                 if r.team_num is not None else None)
+        except Exception as e:
+            print(f"  (spotted/radar indisponível nesta demo: {e})")
+
+    for atacante, mom, amostras, a_sid, v_sid, seq_ini, seq_fim in candidatos_track:
+        # D1.1: se um teammate do atacante via a vítima durante o tracking, a
+        # posição estava no radar do time (info legítima) — não é wallhack.
+        spot_teammate = teammate_spotou(spot_por, team_por, a_sid, v_sid,
+                                        seq_ini, seq_fim)
+        mom["ctx"]["spotted_por_teammate"] = spot_teammate
+        if spot_teammate:
+            mom["tipo"] = "TRACK-RADAR"
+            mom["peso"] = 0
+            mom["ctx"]["classe"] = "descartado"
+            mom["desc"] += (" — mas a vítima estava SPOTTED por um teammate do "
+                            "atacante (posição no radar do time — não pontua)")
+            continue
         # L6: se o atacante VIU o alvo nos ~3 s antes da janela, é jogada de
         # "última posição conhecida", não wallhack
         viu_antes = False
@@ -820,8 +875,8 @@ a { color:var(--ink2); }
 """
 
 ICONES = {"FLICK": "⚡", "REAÇÃO": "⏱️", "TRACK": "🧲", "TRACK-PAREDE": "🚨",
-          "TRACK-INFO": "🔊", "TRACK-VIU": "👀", "SMOKE": "💨",
-          "SMOKE-COMUM": "🌫️", "PAREDE": "🧱", "CEGO": "🫣"}
+          "TRACK-INFO": "🔊", "TRACK-VIU": "👀", "TRACK-RADAR": "📡",
+          "SMOKE": "💨", "SMOKE-COMUM": "🌫️", "PAREDE": "🧱", "CEGO": "🫣"}
 
 
 def svg_radar(radar, momentos):
@@ -1070,8 +1125,10 @@ com seus próprios olhos (a demo pula pra ~5 s antes do lance).</div>
   wallhack que uma demo permite (repetição na mesma vítima não conta — vítima
   previsível dispara o sinal em vários atacantes). Uma ocorrência isolada pode
   ser rastreio legítimo pelo SOM. Não pontua se o atacante viu o alvo segundos
-  antes (👀 última posição conhecida) ou se a vítima atirou/jogou granada
-  (🔊 posição revelada). (Smoke não é parede — kills por smoke são o 💨.)</li>
+  antes (👀 última posição conhecida), se a vítima atirou/jogou granada
+  (🔊 posição revelada) ou se um teammate a enxergava (📡 spotted no radar do
+  time — informação legítima, checada no campo nativo da demo).
+  (Smoke não é parede — kills por smoke são o 💨.)</li>
 <li><strong>💨 Kill por smoke:</strong> só pontua se foi tiro PRECISO (≤4 tiros
   em 2 s) a ≥7 m — spammar posição conhecida através da fumaça é jogada normal
   e aparece como 🌫️ sem pontuar. Filtro calibrado com feedback de jogador
