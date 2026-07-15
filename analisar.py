@@ -215,6 +215,43 @@ def reacao_pos_los(visivel, T, passo=2, max_atras=128, oclusao_min=3):
     return None, None
 
 
+def correlacao(xs, ys):
+    """Correlação de Pearson entre duas séries (None se degenerada/curta)."""
+    n = min(len(xs), len(ys))
+    if n < 4:
+        return None
+    xs, ys = xs[:n], ys[:n]
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    syy = sum((y - my) ** 2 for y in ys)
+    if sxx <= 1e-9 or syy <= 1e-9:
+        return None  # série sem variação: correlação indefinida
+    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    return sxy / math.sqrt(sxx * syy)
+
+
+def correlacao_defasada(d_alvo, d_mira, max_defasagem=3):
+    """D2.1: a mira SEGUE o alvo? Correlaciona as variações angulares e
+    procura a defasagem (em amostras) que maximiza a correlação.
+
+    Retorna (r_sem_defasagem, melhor_r, melhor_defasagem) — defasagem
+    positiva = a mira reage DEPOIS do alvo (assinatura de tracking por
+    informação: humano segue com atraso; prefire/posição dá corr ~0).
+    Alvo parado derrota o teste (variação ~0 → None) — por isso só roda em
+    janelas com mudança angular material.
+    """
+    r0 = correlacao(d_alvo, d_mira)
+    melhor_r, melhor_k = r0, 0
+    for k in range(1, max_defasagem + 1):
+        for sinal, a, m in ((k, d_alvo[:-k], d_mira[k:]),
+                            (-k, d_alvo[k:], d_mira[:-k])):
+            r = correlacao(a, m)
+            if r is not None and (melhor_r is None or r > melhor_r):
+                melhor_r, melhor_k = r, sinal
+    return r0, melhor_r, melhor_k
+
+
 def ultima_visao(visivel, t_ref, t_min, passo=16):
     """D1.3: tick mais recente em [t_min, t_ref) em que a LOS estava aberta.
 
@@ -904,6 +941,31 @@ def analisar_demo(caminho):
                 atacante["premira"] += 1
                 atacante["vitimas_premira"].append(mom["vitima"])
             continue
+
+        # D2.1: a mira SEGUIU o alvo? correlação entre a variação da direção
+        # atacante→alvo e a variação da mira (yaw), com busca de defasagem.
+        # Só faz sentido com alvo em movimento angular — garantido aqui pelo
+        # giro ≥ TRACK_MIN_GIRO (alvo parado derrota o teste).
+        dir_deltas, mira_deltas = [], []
+        prev = None
+        for t in range(seq_ini, seq_fim + 1, 8):
+            a = lk.get((t, a_sid))
+            v = lk.get((t, v_sid))
+            if not (a and v):
+                prev = None
+                continue
+            dir_yaw = math.degrees(math.atan2(v[1] - a[1], v[0] - a[0]))
+            if prev is not None:
+                dir_deltas.append(norm180(dir_yaw - prev[0]))
+                mira_deltas.append(norm180(a[3] - prev[1]))
+            prev = (dir_yaw, a[3])
+        r0, melhor_r, defas = correlacao_defasada(dir_deltas, mira_deltas)
+        if r0 is not None:
+            mom["ctx"]["correlacao_mira_alvo"] = r0
+            mom["ctx"]["correlacao_max"] = melhor_r
+            mom["ctx"]["defasagem_ms"] = defas * 125.0
+            mom["desc"] += (f" · correlação mira↔alvo r={r0:.2f} "
+                            f"(máx {melhor_r:.2f}, defasagem {defas * 125:.0f} ms)")
 
         atras_parede = oclusao is not None and oclusao >= 0.7
         if atras_parede:

@@ -98,9 +98,13 @@ declarado da demo, não como certeza de ausência de call.
 
 ### D2. Correlação de mira com alvo oculto ⏳
 
-- ⏳ D2.1. Para janelas com parede/smoke, calcular as séries de variação da
-  direção atacante→alvo e da mira; medir correlação, defasagem, duração e
-  amplitude angular. Exigir alvo em movimento e mudança angular material.
+- 🔨 D2.1. **v6.11:** para janelas de tracking (alvo em movimento angular
+  material — giro ≥12°, que o teste exige), as séries Δdireção-ao-alvo e
+  Δmira são correlacionadas com busca de defasagem (±375 ms) e gravadas no
+  episódio (`correlacao_mira_alvo`, `correlacao_max`, `defasagem_ms`) e no
+  desc. Duração/amplitude já eram gravadas. Falta: janelas de smoke (hoje só
+  parede) e leitura calibrada dos valores (defasagem negativa = antecipação?
+  visto 1x, em observação).
 - ⏳ D2.2. Separar três estados: mira parada em ângulo comum (não é tracking),
   pré-aim plausível/ambíguo (anotação) e mira que acompanha o alvo oculto
   (candidato forte).
@@ -270,6 +274,14 @@ comparação antes/depois e justificativa em `APRENDIZADOS.md`.
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-15 · v6.11 (D2.1 parcial): correlação mira↔alvo nativa. Para cada
+  TRACK/TRACK-PAREDE, Pearson entre as variações angulares da direção ao alvo
+  e da mira, com busca de defasagem (±3 amostras ≈ ±375 ms) — corr→+1 com
+  defasagem positiva = mira seguindo informação; corr~0 = prefire/posição.
+  Gravado no contrato (features d0.5) e no desc do lance. Primeiro dado real:
+  um TRACK-PAREDE com defasagem NEGATIVA (mira antecipou o movimento do alvo
+  oculto) — em observação. +6 testes (79 no total).
 
 - 2026-07-15 · v6.10 (D1.2 + D1.3 + D3.2 parcial): contexto forense sem mudar
   regra nenhuma — implementação separada da calibração (pedido do autor).

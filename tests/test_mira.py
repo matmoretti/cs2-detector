@@ -15,7 +15,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from analisar import (norm180, giro_mira, desvio_mira, escada,
                       teammate_spotou, premira_informada, segundos_no_round,
-                      reacao_pos_los, ultima_visao, passos_audiveis)
+                      reacao_pos_los, ultima_visao, passos_audiveis,
+                      correlacao, correlacao_defasada)
 
 
 class TestNorm180(unittest.TestCase):
@@ -280,6 +281,41 @@ class TestPassosAudiveis(unittest.TestCase):
 
     def test_sem_dados_nao_afirma(self):
         self.assertFalse(passos_audiveis({}, "A", "V", 100, 160))
+
+
+class TestCorrelacao(unittest.TestCase):
+    """D2.1: correlação entre variação da direção ao alvo e variação da mira."""
+
+    def test_perfeita(self):
+        xs = [1.0, 2.0, -1.0, 0.5, 3.0]
+        self.assertAlmostEqual(correlacao(xs, xs), 1.0, places=6)
+
+    def test_anticorrelacao(self):
+        xs = [1.0, 2.0, -1.0, 0.5, 3.0]
+        ys = [-x for x in xs]
+        self.assertAlmostEqual(correlacao(xs, ys), -1.0, places=6)
+
+    def test_serie_sem_variacao_indefinida(self):
+        # mira parada (deltas ~0) → correlação indefinida, não zero
+        self.assertIsNone(correlacao([1.0, 2.0, 3.0, 4.0], [0.0] * 4))
+
+    def test_serie_curta(self):
+        self.assertIsNone(correlacao([1.0, 2.0], [1.0, 2.0]))
+
+    def test_defasagem_detectada(self):
+        # a mira repete o movimento do alvo 1 amostra DEPOIS (humano seguindo)
+        alvo = [1.0, 3.0, -2.0, 0.5, 2.5, -1.0, 1.5, 0.0]
+        mira = [0.0] + alvo[:-1]
+        r0, melhor_r, defas = correlacao_defasada(alvo, mira)
+        self.assertEqual(defas, 1)
+        self.assertGreater(melhor_r, 0.99)
+        self.assertLess(r0, melhor_r)
+
+    def test_sem_defasagem(self):
+        alvo = [1.0, 3.0, -2.0, 0.5, 2.5, -1.0]
+        r0, melhor_r, defas = correlacao_defasada(alvo, list(alvo))
+        self.assertEqual(defas, 0)
+        self.assertAlmostEqual(r0, 1.0, places=6)
 
 
 if __name__ == "__main__":
