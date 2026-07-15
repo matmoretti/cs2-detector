@@ -257,6 +257,71 @@ nem especificamente de ESP; além disso, seus autores alertam que a classe sem
 cheater não é completamente verificada. Portanto, não deve ser misturado ao
 conjunto de ouro nem usado como ground truth do modelo de wallhack legit.
 
+## Aquisição e rotulagem em escala
+
+O objetivo não é transformar o autor do projeto no revisor de milhares de
+demos. A escala vem de automação de coleta, níveis claros de confiança e uma
+quantidade pequena, porém estratégica, de revisão humana independente.
+
+### Fontes e uso permitido
+
+| Fonte | Uso no pipeline | Limite de confiança |
+|---|---|---|
+| Datasets públicos, como CS2CD | Testar ingestão, features, sequência e baseline separado | Não é ground truth de ESP por episódio |
+| Demos próprias e compartilhadas publicamente | Diversidade de mapas, níveis, estilos e janelas-controle | Só coletar por meios permitidos e respeitando os termos da fonte |
+| Histórico Steam do projeto | Acompanhar ban posterior e priorizar investigação | Ban é sinal de jogador, não rótulo de episódio |
+| Bans públicos de plataformas | Encontrar jogadores/demos para amostragem e acompanhamento | Não identifica o tipo de cheat ou o lance específico |
+| Partidas competitivas com controle forte | Proxy para padrões legítimos e comportamentos humanos | Não equivale a prova absoluta de ausência de cheat |
+| Revisão humana independente | Construir conjunto de ouro e resolver casos difíceis | Volume menor; exige protocolo cego |
+
+Fontes externas devem guardar proveniência, data de coleta, licença/termos
+aplicáveis e método de acesso. O coletor nunca deve tentar contornar limites,
+autenticação ou restrições de uma plataforma.
+
+### Hierarquia de rótulos
+
+| Nível | Origem | Papel correto |
+|---|---|---|
+| Ouro | Dupla revisão cega com adjudicação | Treino e teste supervisionados de ESP |
+| Forte externo | Ban confirmado, plataforma de anti-cheat ou contexto controlado | Validação de jogador e priorização de amostra |
+| Fraco | Regras forenses, score atual, padrões conhecidos | Abrir candidatos; nunca definir verdade sozinho |
+| Não rotulado | Demos e janelas-controle sem veredito | Aprender representação/anomalia e amostrar para revisão |
+
+Casos fortes externos e fracos podem orientar aprendizado com rótulo fraco ou
+positivo-não-rotulado, desde que fiquem separados do conjunto de ouro e de
+suas métricas. "Não banido" e "não marcado" são estados desconhecidos, não
+negativos legítimos.
+
+### Ciclo de active learning
+
+1. O coletor e o extrator geram episódios candidatos **e** controles normais.
+2. Um baseline de anomalia/ranking avalia todos, sem afirmar que anomalia é
+   cheat.
+3. O sistema seleciona para revisão episódios de maior incerteza, maior
+   diversidade e maior potencial de alterar o modelo — não somente os já
+   mais suspeitos.
+4. Revisores independentes rotulam esses episódios sem ver o score do sistema.
+5. Apenas os casos aprovados pelo protocolo entram no conjunto de ouro da
+   próxima versão.
+6. O novo modelo é comparado ao anterior em holdout intocado antes de
+   publicação.
+
+Esse ciclo concentra revisão humana onde ela produz mais informação. O autor
+do projeto atua como auditor de protocolo, árbitro de exceções e aprovador de
+versões; não como fonte única de rótulos.
+
+### Operação de revisão distribuída
+
+- Anonimizar jogadores para o revisor e fornecer somente o contexto necessário
+  e o `demo_gototick`.
+- Medir acordo entre revisores, tempo de revisão, taxa de discordância e
+  cobertura por mapa/tipo de episódio.
+- Usar amostras aleatórias de controle para medir viés de confirmação; não
+  enviar somente lances chamativos.
+- Permitir que revisores declarem `inconclusivo_dados` e `ambiguo_contexto`.
+- Auditar periodicamente a qualidade dos revisores e retirar rótulos de baixa
+  confiabilidade do treino.
+
 ## Estratégia de modelos
 
 ### Baseline explicável
@@ -342,7 +407,9 @@ desconhecidos.
 ### M1 — Observação e coleta
 
 Salvar features por episódio com `peso=0` para novos sinais, coletar controles
-estratificados e criar catálogo de revisões humanas cegas e independentes.
+estratificados de fontes permitidas e criar catálogo de revisões humanas cegas
+e independentes. Rodar primeiro um ranking de anomalia/variedade para escolher
+os episódios que irão para revisão.
 
 **Pronto quando:** existem episódios de ouro e controles revisados com contexto
 suficiente para auditoria, acordo entre revisores medido e desacordos
@@ -351,9 +418,10 @@ preservados.
 ### M2 — Dataset congelado
 
 Congelar esquema de rótulos, fonte, confiança, proveniência, splits e manifesto
-de experimento. Definir antes do treino os gates mensuráveis: cobertura mínima
-por fatia, acordo mínimo entre revisores, baseline a superar, limite de falso
-positivo, Precision@K esperado e capacidade humana de revisão.
+de experimento. Separar conjunto de ouro, rótulos fortes externos, rótulos
+fracos e dados não rotulados. Definir antes do treino os gates mensuráveis:
+cobertura mínima por fatia, acordo mínimo entre revisores, baseline a superar,
+limite de falso positivo, Precision@K esperado e capacidade humana de revisão.
 
 **Pronto quando:** um experimento pode ser reproduzido sem reclassificar ou
 embaralhar os mesmos dados, e seus critérios de aceite foram definidos antes de
