@@ -30,8 +30,8 @@ import datetime
 # sempre que a semântica de um campo mudar — o dataset guarda com qual versão
 # cada linha foi gerada.
 SCHEMA_VERSAO = "d0.1"      # formato do registro de episódio (este arquivo)
-VERSAO_FEATURES = "d0.3"    # semântica dos campos de contexto/geometria/mira
-VERSAO_REGRAS = "v6.9"      # versão do detector que emitiu a saída por regra
+VERSAO_FEATURES = "d0.4"    # semântica dos campos de contexto/geometria/mira
+VERSAO_REGRAS = "v6.10"     # versão do detector que emitiu a saída por regra
 
 PASTA = os.path.dirname(os.path.abspath(__file__))
 PASTA_DADOS = os.path.join(PASTA, "dados")
@@ -223,6 +223,8 @@ def montar_episodio(mom, meta):
             # calibração futura: a 1ª revisão humana refutou exclusão por
             # timing (confirmado aos 9,2 s vs refutado aos 4,8 s)
             "segundos_no_round": ctx.get("segundos_no_round"),
+            # D3.2: spam (vários tiros) vs tiro único no lance
+            "tiros_2s": ctx.get("tiros_2s"),
             "idade_ultima_visao_s": (
                 conhecido(ctx["idade_ultima_visao_s"])
                 if ctx.get("idade_ultima_visao_s") is not None
@@ -248,6 +250,8 @@ def montar_episodio(mom, meta):
             # reação pós-LOS (v6.9): tempo LOS-abrir→tiro e desvio na abertura
             "reacao_pos_los_ms": ctx.get("reacao_pos_los_ms"),
             "desvio_abertura_deg": ctx.get("desvio_abertura_deg"),
+            # D3.2 (v6.10): correção da mira no alvo oculto antes do wallbang
+            "ajuste_oculto_deg": ctx.get("ajuste_oculto_deg"),
         },
 
         # Contraprovas: informação legítima que poderia explicar a suspeita.
@@ -263,6 +267,12 @@ def montar_episodio(mom, meta):
             # trackings; nos demais sinais permanece desconhecido (não avaliado).
             "radar_spotted": tri_estado(ctx.get("spotted_por_teammate"),
                                         RAZAO_SPOTTED),
+            # D1.2 (v6.10): ESTIMATIVA — corrida a ≤1100 u, sem oclusão de som.
+            # Anotação para calibração; não é exclusão automática.
+            "passos_audiveis_estimados": tri_estado(
+                ctx.get("passos_audiveis_estimado"),
+                "passos não avaliados neste tipo de sinal (estimativa sem "
+                "oclusão acústica)"),
             "call_teammate": desconhecido(RAZAO_CALL),
         },
 

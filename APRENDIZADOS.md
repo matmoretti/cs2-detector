@@ -76,6 +76,20 @@ fica desnecessário para aquele padrão.
   é game sense comum (rótulo `legitimo_explicado`). Confirma a classe
   "ambíguo" do sinal: sem mapa de ângulos comuns, 1x não diz nada — repetição
   em vítimas/posições distintas continua sendo o critério.
+- **Passos estimados NÃO podem virar exclusão cega (v6.10):** o lance
+  CONFIRMADO R21 (PRE-MIRA) tem `passos_audiveis_estimado=True` — excluir por
+  passos contradiria o rótulo humano. Dos 5 REFLEXO anotados, 4 têm passos
+  estimados na janela; o mais forte (31 ms, confirmado) é o único sem NENHUMA
+  fonte de informação. A estimativa (corrida >110 u/s a ≤1100 u) ignora
+  oclusão acústica e atenuação — fica como anotação/contraprova no episódio;
+  promover a exclusão exige modelar atenuação E sobreviver aos rótulos.
+- **Microajuste em alvo oculto medido (v6.10, wallbang):** no lance rotulado
+  R21 (QueGruda), a mira se ajustou 1,1° para o alvo 100% oculto no último
+  ¾ s antes de varar — ≈4x o tamanho angular da cabeça àquela distância, ou
+  seja, acima do limite de interpretação da lição de precisão angular. O
+  limiar fixo de 2° da nota observacional não disparou: na calibração,
+  normalizar o ajuste pelo tamanho angular da hitbox (o dado bruto e a
+  distância já ficam no episódio).
 - **Dataset de episódios (D0.1):** cada lance — candidato OU descartado — vira
   um registro em `dados/episodios.jsonl` (`contexto.py`). A perícia agora pode
   consultar o contexto bruto de um lance sem reprocessar a demo, e o veredito

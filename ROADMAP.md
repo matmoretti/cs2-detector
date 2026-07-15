@@ -81,12 +81,16 @@ calibração assistida por revisão (D0.3) é o próximo passo.
   A contraprova `radar_spotted` do episódio deixa de ser sempre "desconhecido"
   e passa a `sim`/`nao` real nos trackings. Validado em caso real (kill onde
   só o teammate via a vítima → exclusão dispara).
-- ⏳ D1.2. Trocar a regra binária de barulho por contexto de audibilidade:
-  tipo do evento, distância, tempo decorrido, movimento e oclusão quando a
-  demo permitir. Começar como anotação, sem reduzir/aumentar score.
-- ⏳ D1.3. Generalizar "última posição conhecida": medir a última linha de
-  visão direta do próprio jogador e a idade dessa informação, em vez de uma
-  janela fixa universal.
+- 🔨 D1.2. Trocar a regra binária de barulho por contexto de audibilidade.
+  **v6.10:** estimativa de passos (corrida >110 u/s a ≤1100 u do atacante)
+  anotada no episódio (`passos_audiveis_estimados`) — SEM mudar exclusões:
+  o lance confirmado R21 tem passos=True, então exclusão cega contradiria o
+  rótulo. Falta: oclusão acústica/atenuação, tipo do evento e calibração.
+- ✅ D1.3. "Última posição conhecida" generalizada (v6.10): a idade da última
+  LOS do próprio atacante é MEDIDA em toda a janela carregada (~5,5 s) e
+  gravada no contrato (`idade_ultima_visao_s`) para tracks, pré-miras e
+  reflexos. A regra binária de 3 s (👀 TRACK-VIU / re-peek) segue inalterada
+  até haver rótulos suficientes para calibrar um limiar melhor.
 
 **Pronto quando:** cada candidato de ESP responde: "que informação legítima
 existia, para quem, e há quanto tempo?". Voz/discord continuam como limite
@@ -113,8 +117,11 @@ em primeira pessoa antes de alterar `pontuar()`.
 - ⏳ D3.1. Evoluir "GATILHO CIRÚRGICO" para uma série temporal do erro angular
   mira→alvo, velocidade do alvo e instante do disparo. Manter observacional
   até haver baseline de partidas suficientes.
-- ⏳ D3.2. Classificar prefire/wallbang em: lineup/ângulo comum, tiro por
-  última posição, spam e tiro seletivo na posição real desconhecida.
+- 🔨 D3.2. Classificar prefire/wallbang. **v6.10:** cada PAREDE carrega
+  spam vs tiro único (`tiros_2s`), oclusão pré-kill e `ajuste_oculto_deg`
+  (correção da mira no alvo oculto no último ¾ s — no wallbang rotulado
+  mediu 1,1° ≈ 4x a cabeça na distância, batendo com o veredito do autor).
+  Falta: lineup/ângulo comum, última posição e nota normalizada por hitbox.
 - ⏳ D3.3. Investigar dados de granadas de smoke (posição, duração e volume),
   pois o evento `thrusmoke` só descreve o resultado da kill, não todo o
   contexto visual do lance.
@@ -263,6 +270,15 @@ comparação antes/depois e justificativa em `APRENDIZADOS.md`.
 - ⏳ Dataset rotulado via bans confirmados → futuro classificador ML
 
 ## Histórico
+
+- 2026-07-15 · v6.10 (D1.2 + D1.3 + D3.2 parcial): contexto forense sem mudar
+  regra nenhuma — implementação separada da calibração (pedido do autor).
+  Idade da última visão medida e gravada no contrato; passos audíveis
+  estimados como anotação (o lance confirmado R21 tem passos=True → exclusão
+  cega contradiria o rótulo; 4 dos 5 reflexos anotados têm passos, o mais
+  forte — 31 ms — é o único sem fonte alguma); wallbang classificado
+  (spam/único + microajuste em alvo oculto: 1,1° medido no lance rotulado).
+  Score e sinais idênticos; features d0.4. +8 testes (73 no total).
 
 - 2026-07-15 · v6.9: anotação 🧠 REFLEXO (reação pós-LOS) — tiro letal ≤156 ms
   após a linha de visão abrir, vindo de oclusão sustentada, sem barulho/

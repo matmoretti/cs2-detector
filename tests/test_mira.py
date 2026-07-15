@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from analisar import (norm180, giro_mira, desvio_mira, escada,
                       teammate_spotou, premira_informada, segundos_no_round,
-                      reacao_pos_los)
+                      reacao_pos_los, ultima_visao, passos_audiveis)
 
 
 class TestNorm180(unittest.TestCase):
@@ -227,6 +227,59 @@ class TestReacaoPosLos(unittest.TestCase):
         vis = self._vis({998: False, 996: False, 994: False})
         reacao, abertura = reacao_pos_los(vis, 1000)
         self.assertEqual((reacao, abertura), (0, 1000))
+
+
+class TestUltimaVisao(unittest.TestCase):
+    """D1.3: idade da última linha de visão do próprio atacante."""
+
+    def test_nunca_viu(self):
+        self.assertIsNone(ultima_visao(lambda t: False, 1000, 500))
+
+    def test_acha_a_mais_recente(self):
+        vis = lambda t: t in (600, 900)
+        self.assertEqual(ultima_visao(lambda t: vis(t), 1000, 500, passo=100),
+                         900)
+
+    def test_respeita_o_limite_inferior(self):
+        # visível só abaixo de t_min → não conta
+        self.assertIsNone(ultima_visao(lambda t: t < 500, 1000, 500))
+
+    def test_dado_faltando_continua_procurando(self):
+        vis = {900: None, 800: True}
+        self.assertEqual(
+            ultima_visao(lambda t: vis.get(t, False), 1000, 500, passo=100),
+            800)
+
+
+class TestPassosAudiveis(unittest.TestCase):
+    """D1.2 (estimativa): corrida da vítima perto do atacante."""
+
+    @staticmethod
+    def _lk(vel_por_tick, dist=500.0):
+        # vítima anda no eixo X com a velocidade dada; atacante fixo a `dist`
+        lk = {}
+        x = 0.0
+        for t in range(84, 165, 8):
+            lk[(t, "V")] = (x, 0.0, 0.0, 0.0, 0.0, True)
+            x += vel_por_tick * 8
+        for t in range(84, 165, 8):
+            lk[(t, "A")] = (lk[(t, "V")][0] + dist, 0.0, 0.0, 0.0, 0.0, True)
+        return lk
+
+    def test_correndo_perto_e_audivel(self):
+        lk = self._lk(vel_por_tick=250.0 / 64)   # 250 u/s
+        self.assertTrue(passos_audiveis(lk, "A", "V", 100, 160))
+
+    def test_andando_devagar_nao(self):
+        lk = self._lk(vel_por_tick=80.0 / 64)    # shift-walk
+        self.assertFalse(passos_audiveis(lk, "A", "V", 100, 160))
+
+    def test_correndo_longe_nao(self):
+        lk = self._lk(vel_por_tick=250.0 / 64, dist=2000.0)
+        self.assertFalse(passos_audiveis(lk, "A", "V", 100, 160))
+
+    def test_sem_dados_nao_afirma(self):
+        self.assertFalse(passos_audiveis({}, "A", "V", 100, 160))
 
 
 if __name__ == "__main__":

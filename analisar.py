@@ -215,6 +215,46 @@ def reacao_pos_los(visivel, T, passo=2, max_atras=128, oclusao_min=3):
     return None, None
 
 
+def ultima_visao(visivel, t_ref, t_min, passo=16):
+    """D1.3: tick mais recente em [t_min, t_ref) em que a LOS estava aberta.
+
+    Retorna None se o atacante não viu o alvo em toda a janela carregada.
+    Preenche a "idade da última visão" do contrato — a medição substitui a
+    janela fixa; a REGRA (3 s → última posição conhecida) segue a mesma até
+    haver calibração com mais rótulos.
+    """
+    t = t_ref - passo
+    while t >= t_min:
+        if visivel(t) is True:
+            return t
+        t -= passo
+    return None
+
+
+def passos_audiveis(lk, a_sid, v_sid, t_ini, t_fim, passo=16,
+                    vel_min=110.0, alcance=1100.0):
+    """D1.2 (ESTIMATIVA, anotação apenas): a vítima correu (>vel_min u/s) a
+    ≤alcance unidades do atacante em algum momento de [t_ini, t_fim]?
+
+    Passo audível tem alcance (~1100 u) e o som atravessa paredes; oclusão
+    acústica e volume por superfície NÃO são modelados — por isso isto é
+    contexto no episódio, nunca exclusão automática: virar exclusão exige
+    calibrar contra os lances já confirmados por revisão humana.
+    """
+    for t in range(t_ini, t_fim + 1, passo):
+        v2 = lk.get((t, v_sid))
+        v1 = lk.get((t - 8, v_sid))
+        a = lk.get((t, a_sid))
+        if not (v2 and v1 and a):
+            continue
+        vel = math.hypot(v2[0] - v1[0], v2[1] - v1[1]) / (8 / 64.0)
+        if vel < vel_min:
+            continue
+        if math.hypot(v2[0] - a[0], v2[1] - a[1], v2[2] - a[2]) <= alcance:
+            return True
+    return False
+
+
 def segundos_no_round(freeze_ticks, tick, tickrate=64):
     """Segundos desde o último freeze_end antes do tick (None se desconhecido).
 
@@ -497,7 +537,41 @@ def analisar_demo(caminho):
                         {"smoke": True, "classe": "descartado"})
         if int(get(m, "penetrated", 0)) > 0:
             atacante["wallbang"] += 1
-            momento("PAREDE", "kill através de parede/objeto", 2)
+            # D3.2: classificar o wallbang — spam vs tiro único, e a mira se
+            # AJUSTOU no alvo enquanto ele estava oculto? (medição observacional
+            # do padrão "microajuste antes de varar" apontado na 1ª rotulagem)
+            ctx_w = {"tiros_2s": tiros_ultimos_2s(a_sid, T),
+                     "passos_audiveis_estimado": passos_audiveis(
+                         lk, a_sid, v_sid, max(1, T - 320), T)}
+            extra_w = ""
+            if checker:
+                serie = []
+                for t in range(T - 48, T + 1, 8):
+                    a = lk.get((t, a_sid))
+                    v = lk.get((t, v_sid))
+                    if not (a and v):
+                        continue
+                    d, _ = desvio_mira(a[0], a[1], a[2], a[3], a[4],
+                                       v[0], v[1], v[2])
+                    if d is None:
+                        continue
+                    oc = not checker.is_visible(
+                        (a[0], a[1], a[2] + 64.0), (v[0], v[1], v[2] + 32.0))
+                    serie.append((d, oc))
+                if len(serie) >= 4:
+                    frac_oc = sum(1 for _, oc in serie if oc) / len(serie)
+                    ajuste = serie[0][0] - serie[-1][0]
+                    ctx_w["oclusao_frac"] = frac_oc
+                    ctx_w["ajuste_oculto_deg"] = ajuste
+                    ctx_w["desvio_min_deg"] = serie[-1][0]
+                    if frac_oc >= 0.7 and ajuste >= 2.0:
+                        extra_w = (f" — a mira se AJUSTOU {ajuste:.1f}° para o "
+                                   "alvo OCULTO no último ¾ s antes de varar "
+                                   "(em observação, sem peso)")
+            tiro_txt = ("tiro único" if ctx_w["tiros_2s"] <= 1
+                        else f"{ctx_w['tiros_2s']} tiros em 2 s")
+            momento("PAREDE", f"kill através de parede/objeto ({tiro_txt})"
+                              f"{extra_w}", 2, ctx_w)
         if get(m, "attackerblind", False):
             atacante["cego"] += 1
             momento("CEGO", "kill enquanto cego de flashbang", 3)
@@ -613,6 +687,10 @@ def analisar_demo(caminho):
                     "duracao_s": duracao_s,
                     "velocidade_alvo_us": movimento / duracao_s if duracao_s else None,
                     "barulho_recente": vitima_barulho,
+                    # D1.2: estimativa (anotação) — vítima correndo perto era
+                    # potencialmente audível; não exclui sem calibração
+                    "passos_audiveis_estimado": passos_audiveis(
+                        lk, a_sid, v_sid, seq_ini, seq_fim),
                 }
                 if giro_necessario < TRACK_MIN_GIRO:
                     # segurar ângulo parado — descarte L3 (anti aim-assist), e
@@ -679,20 +757,26 @@ def analisar_demo(caminho):
                     fez_barulho = (bisect.bisect_right(bar_v, T)
                                    - bisect.bisect_left(bar_v,
                                                         t_abre - 320)) > 0
-                    viu = False
-                    for t in range(t_abre - 192, t_abre - 4, 16):
+                    def vis_antes(t):
                         va = lk.get((t, a_sid))
                         vv = lk.get((t, v_sid))
-                        if va and vv and vv[5] and checker.is_visible(
-                                (va[0], va[1], va[2] + 64.0),
-                                (vv[0], vv[1], vv[2] + 32.0)):
-                            viu = True
-                            break
+                        if va is None or vv is None or not vv[5]:
+                            return None
+                        return checker.is_visible(
+                            (va[0], va[1], va[2] + 64.0),
+                            (vv[0], vv[1], vv[2] + 32.0))
+                    t_visto = ultima_visao(vis_antes, t_abre - 4,
+                                           max(1, T - JANELA_CARREGA))
+                    viu = t_visto is not None and t_visto >= t_abre - 192
                     ctx_r = {"reacao_pos_los_ms": ms,
                              "desvio_abertura_deg": desvio_abre,
                              "distancia_us": dist_u,
                              "viu_antes": viu,
-                             "barulho_recente": fez_barulho}
+                             "barulho_recente": fez_barulho,
+                             "passos_audiveis_estimado": passos_audiveis(
+                                 lk, a_sid, v_sid, max(1, t_abre - 320), T)}
+                    if t_visto is not None:
+                        ctx_r["idade_ultima_visao_s"] = (T - t_visto) / 64.0
                     if fez_barulho or viu:
                         motivo = ("vítima fez barulho antes" if fez_barulho
                                   else "atacante reviu o alvo pouco antes")
@@ -757,16 +841,23 @@ def analisar_demo(caminho):
                                 "pontua)")
             continue
         # L6: se o atacante VIU o alvo nos ~3 s antes da janela, é jogada de
-        # "última posição conhecida", não wallhack
+        # "última posição conhecida", não wallhack. D1.3: além do binário,
+        # mede-se a IDADE da última visão em toda a janela carregada.
         viu_antes = False
         if checker:
-            for t in range(seq_ini - 192, seq_ini, 16):
+            def vis_track(t):
                 a = lk.get((t, a_sid))
                 v = lk.get((t, v_sid))
-                if a and v and v[5] and checker.is_visible(
-                        (a[0], a[1], a[2] + 64.0), (v[0], v[1], v[2] + 32.0)):
-                    viu_antes = True
-                    break
+                if a is None or v is None or not v[5]:
+                    return None
+                return checker.is_visible((a[0], a[1], a[2] + 64.0),
+                                          (v[0], v[1], v[2] + 32.0))
+            T_kill = mom["tick"]
+            t_visto = ultima_visao(vis_track, seq_ini,
+                                   max(1, T_kill - JANELA_CARREGA))
+            if t_visto is not None:
+                mom["ctx"]["idade_ultima_visao_s"] = (T_kill - t_visto) / 64.0
+            viu_antes = t_visto is not None and t_visto >= seq_ini - 192
             # só é contraprova confiável quando houve geometria para checar
             mom["ctx"]["viu_antes"] = viu_antes
         if viu_antes:
